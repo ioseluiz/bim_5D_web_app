@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}
+    {% if object %}Editar Proyecto: {{ object.nombre }}{% else %}Nuevo Proyecto{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">{% if object %}Editar Proyecto{% else %}Crear Nuevo Proyecto{% endif %}</h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    {{ form|crispy }}
+                    <div class="mt-4 d-flex justify-content-between">
+                        <a href="{% url 'bim:project_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+                        <button type="submit" class="btn btn-primary">Guardar Proyecto</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

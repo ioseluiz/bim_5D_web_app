@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Inicio - BIM 5D Cost Estimator{% endblock %}
+
+{% block content %}
+<div class="p-5 mb-4 bg-light rounded-3 border">
+    <div class="container-fluid py-5">
+        <h1 class="display-5 fw-bold">Bienvenido al Estimador BIM 5D</h1>
+        <p class="col-md-8 fs-4">Gestiona tus proyectos BIM, vincula elementos del modelo con bases de datos de costos y genera presupuestos precisos basados en el estándar MasterFormat.</p>
+        <a href="{% url 'bim:project_list' %}" class="btn btn-primary btn-lg">Explorar Proyectos</a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-4">
+        <div class="card h-100 p-3">
+            <div class="card-body text-center">
+                <div class="display-4 text-primary mb-3">
+                    <i class="bi bi-folder-fill"></i>
+                </div>
+                <h3 class="card-title">{{ project_count }}</h3>
+                <p class="card-text text-muted">Proyectos Creados</p>
+                <a href="{% url 'bim:project_list' %}" class="btn btn-outline-secondary btn-sm">Ver todos</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 p-3">
+            <div class="card-body text-center">
+                <div class="display-4 text-success mb-3">
+                    <i class="bi bi-box-fill"></i>
+                </div>
+                <h3 class="card-title">{{ model_count }}</h3>
+                <p class="card-text text-muted">Modelos IFC Cargados</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 p-3">
+            <div class="card-body text-center">
+                <div class="display-4 text-warning mb-3">
+                    <i class="bi bi-layers-fill"></i>
+                </div>
+                <h3 class="card-title">MasterFormat</h3>
+                <p class="card-text text-muted">Base de Datos de Costos</p>
+                <a href="{% url 'costs:activity_list' %}" class="btn btn-outline-secondary btn-sm">Gestionar</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-5">
+    <h3>Acciones Rápidas</h3>
+    <div class="list-group mt-3 shadow-sm">
+        <a href="{% url 'bim:project_create' %}" class="list-group-item list-group-item-action">
+            <i class="bi bi-plus-circle me-2"></i> Crear nuevo Proyecto
+        </a>
+        <a href="{% url 'costs:activitykit_create' %}" class="list-group-item list-group-item-action">
+            <i class="bi bi-box-seam me-2"></i> Crear nuevo Kit de Actividades
+        </a>
+        <a href="{% url 'costs:activity_create' %}" class="list-group-item list-group-item-action">
+            <i class="bi bi-currency-dollar me-2"></i> Agregar Actividad de Costo
+        </a>
+    </div>
+</div>
+{% endblock %}

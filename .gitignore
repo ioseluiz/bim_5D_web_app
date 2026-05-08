@@ -1,0 +1,47 @@
+# ── Python / Django ────────────────────────────────────────────────────────────
+venv/
+__pycache__/
+*.py[cod]
+*.egg
+*.egg-info/
+
+# ── Base de datos de desarrollo ────────────────────────────────────────────────
+db.sqlite3
+
+# ── Variables de entorno y secretos ───────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Archivos subidos por usuarios (IFC y otros) ────────────────────────────────
+media/
+
+# ── Build artifacts ────────────────────────────────────────────────────────────
+dist/
+build/
+frontend/dist/
+
+# ── Node.js ────────────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Archivos temporales y de editor ───────────────────────────────────────────
+*.log
+*.bak
+*.tmp
+*.swp
+*.swo
+*.zip
+*.tar.gz
+
+# ── IDEs ───────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+!.vscode/extensions.json
+
+# ── SO ─────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Archivos de referencia grandes (no deben ir al repo) ──────────────────────
+references/

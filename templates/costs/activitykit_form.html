@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if object %}Editar{% else %}Nuevo{% endif %} Kit de Actividades{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card shadow-sm">
+            <div class="card-header bg-secondary text-white">
+                <h4 class="mb-0">Kit de Actividades BIM</h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="row">
+                        <div class="col-md-6">
+                            {{ form.nombre|as_crispy_field }}
+                            {{ form.descripcion|as_crispy_field }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Seleccionar Actividades</label>
+                            <div class="border rounded p-3" style="max-height: 400px; overflow-y: auto;">
+                                {{ form.activities|as_crispy_field }}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4 d-flex justify-content-between">
+                        <a href="{% url 'costs:activitykit_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+                        <button type="submit" class="btn btn-success">Guardar Kit</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

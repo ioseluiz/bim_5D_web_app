@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.nombre }} - BIM 5D{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'bim:project_list' %}">Proyectos</a></li>
+    <li class="breadcrumb-item active">{{ project.nombre }}</li>
+  </ol>
+</nav>
+
+<div class="row">
+    <div class="col-md-8">
+        <h1>{{ project.nombre }}</h1>
+        <p class="lead">{{ project.descripcion }}</p>
+        <div class="mt-2">
+            <a href="{% url 'bim:project_edit' project.pk %}" class="btn btn-outline-secondary btn-sm">Editar Detalles</a>
+            <a href="{% url 'bim:project_delete' project.pk %}" class="btn btn-outline-danger btn-sm">Eliminar Proyecto</a>
+        </div>
+    </div>
+    <div class="col-md-4 text-end">
+        <a href="{% url 'bim:model_create' project.pk %}" class="btn btn-success">Cargar Nuevo Modelo IFC</a>
+    </div>
+</div>
+
+<hr>
+
+<h3>Modelos BIM</h3>
+<div class="list-group">
+    {% for model in project.bim_models.all %}
+    <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="mb-1">{{ model.nombre }}</h5>
+            <small class="text-muted">Versión: {{ model.version }} | Cargado el {{ model.cargado_el|date:"d/m/Y H:i" }}</small>
+        </div>
+        <div class="d-flex align-items-center">
+            <a href="{% url 'bim:bim_viewer' model.pk %}" class="btn btn-primary btn-sm me-2">Abrir Visor</a>
+            <a href="{% url 'bim:model_delete' model.pk %}" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></a>
+        </div>
+    </div>
+    {% empty %}
+    <p class="text-muted">No hay modelos cargados en este proyecto.</p>
+    {% endfor %}
+</div>
+{% endblock %}

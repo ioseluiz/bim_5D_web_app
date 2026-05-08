@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Eliminar Item de Costos{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-danger shadow-sm">
+            <div class="card-header bg-danger text-white">
+                <h4 class="mb-0">Confirmar Eliminación</h4>
+            </div>
+            <div class="card-body">
+                <p class="lead">¿Estás seguro de que deseas eliminar este item?</p>
+                <p><strong>{{ object }}</strong></p>
+                
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mt-4 d-flex justify-content-between">
+                        <button type="button" onclick="history.back()" class="btn btn-outline-secondary">Cancelar</button>
+                        <button type="submit" class="btn btn-danger">Eliminar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

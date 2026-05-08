@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Cargar Modelo IFC - {{ project.nombre }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-secondary text-white">
+                <h4 class="mb-0">Cargar Nuevo Modelo IFC</h4>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Proyecto: <strong>{{ view.kwargs.project_pk }}</strong></p>
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    {{ form|crispy }}
+                    <div class="mt-4 d-flex justify-content-between">
+                        <button type="button" onclick="history.back()" class="btn btn-outline-secondary">Cancelar</button>
+                        <button type="submit" class="btn btn-success">Cargar Modelo</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

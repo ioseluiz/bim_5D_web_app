@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Actividades de Costo - BIM 5D{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Base de Actividades</h1>
+    <a href="{% url 'costs:activity_create' %}" class="btn btn-primary">Nueva Actividad</a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Código</th>
+                    <th>Descripción</th>
+                    <th>Unidad</th>
+                    <th>C.U. Total</th>
+                    <th>División</th>
+                    <th class="text-end">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for act in activities %}
+                <tr>
+                    <td class="fw-bold">{{ act.codigo_actividad }}</td>
+                    <td>{{ act.descripcion|truncatechars:50 }}</td>
+                    <td>{{ act.unidad }}</td>
+                    <td>${{ act.cu_total|floatformat:2 }}</td>
+                    <td><span class="badge bg-info text-dark">{{ act.division.division_code }}</span></td>
+                    <td class="text-end">
+                        <a href="{% url 'costs:activity_edit' act.pk %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil"></i></a>
+                        <a href="{% url 'costs:activity_delete' act.pk %}" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">No hay actividades registradas.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

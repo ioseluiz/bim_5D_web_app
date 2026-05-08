@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Eliminar Proyecto{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-danger shadow-sm">
+            <div class="card-header bg-danger text-white">
+                <h4 class="mb-0">Confirmar Eliminación</h4>
+            </div>
+            <div class="card-body">
+                <p class="lead">¿Estás seguro de que deseas eliminar el proyecto <strong>"{{ object.nombre }}"</strong>?</p>
+                <p class="text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Esta acción no se puede deshacer y eliminará todos los modelos asociados.</p>
+                
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mt-4 d-flex justify-content-between">
+                        <a href="{% url 'bim:project_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+                        <button type="submit" class="btn btn-danger">Eliminar Definitivamente</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

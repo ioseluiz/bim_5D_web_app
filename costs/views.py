@@ -61,11 +61,25 @@ class ActivityKitCreateView(CreateView):
     template_name = 'costs/activitykit_form.html'
     success_url = reverse_lazy('costs:activitykit_list')
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['all_activities'] = Activity.objects.select_related('division').order_by('division__division_code', 'codigo_actividad')
+        context['all_divisions'] = MasterFormat.objects.order_by('division_code')
+        context['selected_activity_ids'] = []
+        return context
+
 class ActivityKitUpdateView(UpdateView):
     model = ActivityKit
     form_class = ActivityKitForm
     template_name = 'costs/activitykit_form.html'
     success_url = reverse_lazy('costs:activitykit_list')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['all_activities'] = Activity.objects.select_related('division').order_by('division__division_code', 'codigo_actividad')
+        context['all_divisions'] = MasterFormat.objects.order_by('division_code')
+        context['selected_activity_ids'] = list(self.object.activities.values_list('pk', flat=True))
+        return context
 
 class ActivityKitDeleteView(DeleteView):
     model = ActivityKit

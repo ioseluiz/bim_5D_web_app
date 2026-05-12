@@ -5,7 +5,10 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1>Base de Actividades</h1>
-    <a href="{% url 'costs:activity_create' %}" class="btn btn-primary">Nueva Actividad</a>
+    <div>
+        <a href="{% url 'admin:costs_activity_import' %}" class="btn btn-outline-success me-2"><i class="bi bi-file-earmark-excel me-1"></i>Importar</a>
+        <a href="{% url 'costs:activity_create' %}" class="btn btn-primary">Nueva Actividad</a>
+    </div>
 </div>
 
 <div class="card shadow-sm">

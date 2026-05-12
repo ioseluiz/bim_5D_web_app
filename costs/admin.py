@@ -1,6 +1,6 @@
 from django.contrib import admin
 from import_export import resources, fields
-from import_export.widgets import ForeignKeyWidget
+from import_export.widgets import ForeignKeyWidget, ManyToManyWidget
 from import_export.admin import ImportExportModelAdmin
 from .models import MasterFormat, Activity, ActivityKit
 
@@ -24,8 +24,16 @@ class ActivityResource(resources.ModelResource):
         fields = ('codigo_actividad', 'descripcion', 'unidad', 'cu_total', 'material', 'mano_obra', 'equipo', 'division')
 
 class ActivityKitResource(resources.ModelResource):
+    activities = fields.Field(
+        column_name='activities',
+        attribute='activities',
+        widget=ManyToManyWidget(Activity, field='codigo_actividad')
+    )
+
     class Meta:
         model = ActivityKit
+        fields = ('id', 'nombre', 'descripcion', 'activities')
+        export_order = ('id', 'nombre', 'descripcion', 'activities')
 
 @admin.register(MasterFormat)
 class MasterFormatAdmin(ImportExportModelAdmin):
@@ -36,12 +44,14 @@ class MasterFormatAdmin(ImportExportModelAdmin):
 @admin.register(Activity)
 class ActivityAdmin(ImportExportModelAdmin):
     resource_class = ActivityResource
-    list_display = ('codigo_actividad', 'descripcion', 'unidad', 'cu_total', 'division')
-    list_filter = ('division',)
+    list_display = ('codigo_actividad', 'descripcion', 'unidad', 'cu_total', 'division', 'proyecto')
+    list_filter = ('division', 'proyecto')
     search_fields = ('codigo_actividad', 'descripcion')
 
 @admin.register(ActivityKit)
 class ActivityKitAdmin(ImportExportModelAdmin):
     resource_class = ActivityKitResource
-    list_display = ('nombre',)
+    list_display = ('nombre', 'descripcion', 'proyecto')
+    list_filter = ('proyecto',)
     filter_horizontal = ('activities',)
+    search_fields = ('nombre', 'descripcion')

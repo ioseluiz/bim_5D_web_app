@@ -119,6 +119,10 @@ USE_I18N = True
 USE_TZ = True
 
 
+from import_export.formats.base_formats import CSV, XLSX, JSON
+
+IMPORT_EXPORT_FORMATS = [CSV, XLSX, JSON]
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 

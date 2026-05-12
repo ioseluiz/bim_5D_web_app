@@ -2,6 +2,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Navbar from './components/Navbar';
 import ProjectList from './pages/ProjectList';
 import ProjectDetail from './pages/ProjectDetail';
+import ProjectKits from './pages/ProjectKits';
+import ProjectBudget from './pages/ProjectBudget';
 import ActivityList from './pages/ActivityList';
 import ActivityKitList from './pages/ActivityKitList';
 
@@ -15,6 +17,8 @@ function App() {
             <Route path="/" element={<Navigate to="/projects" replace />} />
             <Route path="/projects" element={<ProjectList />} />
             <Route path="/projects/:id" element={<ProjectDetail />} />
+            <Route path="/projects/:id/kits" element={<ProjectKits />} />
+            <Route path="/projects/:id/budget" element={<ProjectBudget />} />
             <Route path="/activities" element={<ActivityList />} />
             <Route path="/kits" element={<ActivityKitList />} />
             <Route path="*" element={<div className="container mt-5"><h2>404 - No Encontrado</h2></div>} />

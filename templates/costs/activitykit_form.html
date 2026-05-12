@@ -14,18 +14,94 @@
                 <form method="post">
                     {% csrf_token %}
                     <div class="row">
-                        <div class="col-md-6">
+                        <div class="col-md-5">
                             {{ form.nombre|as_crispy_field }}
                             {{ form.descripcion|as_crispy_field }}
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-7">
                             <label class="form-label fw-bold">Seleccionar Actividades</label>
-                            <div class="border rounded p-3" style="max-height: 400px; overflow-y: auto;">
-                                {{ form.activities|as_crispy_field }}
+
+                            <!-- Filtros -->
+                            <div class="row g-2 mb-2">
+                                <div class="col-7">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                        <input type="text" id="searchActivities" class="form-control"
+                                               placeholder="Buscar por código o descripción...">
+                                    </div>
+                                </div>
+                                <div class="col-5">
+                                    <select id="filterDivision" class="form-select form-select-sm">
+                                        <option value="">Todas las divisiones</option>
+                                        {% for div in all_divisions %}
+                                        <option value="{{ div.division_code }}">{{ div.division_code }} – {{ div.division_name|truncatechars:25 }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Contador y acciones rápidas -->
+                            <div class="d-flex justify-content-between align-items-center mb-1 px-1">
+                                <small class="text-muted">
+                                    <span id="selectedCount" class="fw-semibold text-primary">0</span>
+                                    seleccionadas de
+                                    <span id="visibleCount">0</span> visibles
+                                </small>
+                                <div>
+                                    <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" id="selectVisible">
+                                        <i class="bi bi-check2-all me-1"></i>Seleccionar visibles
+                                    </button>
+                                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-danger" id="clearAll">
+                                        <i class="bi bi-x-circle me-1"></i>Limpiar
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Tabla de actividades -->
+                            <div class="border rounded" style="max-height: 380px; overflow-y: auto;">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                        <tr>
+                                            <th style="width:36px;"></th>
+                                            <th style="width:110px;">Código</th>
+                                            <th>Descripción</th>
+                                            <th class="text-end" style="width:90px;">CU Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="activitiesTableBody">
+                                        {% for act in all_activities %}
+                                        <tr class="activity-row"
+                                            data-code="{{ act.codigo_actividad|lower }}"
+                                            data-desc="{{ act.descripcion|lower }}"
+                                            data-division="{{ act.division.division_code }}"
+                                            style="cursor: pointer;">
+                                            <td class="text-center align-middle">
+                                                <input type="checkbox"
+                                                       class="form-check-input activity-checkbox"
+                                                       name="activities"
+                                                       value="{{ act.pk }}"
+                                                       {% if act.pk in selected_activity_ids %}checked{% endif %}>
+                                            </td>
+                                            <td class="align-middle">
+                                                <small class="font-monospace text-primary fw-semibold">{{ act.codigo_actividad }}</small>
+                                            </td>
+                                            <td class="align-middle">
+                                                <small>{{ act.descripcion|truncatechars:65 }}</small>
+                                            </td>
+                                            <td class="text-end align-middle">
+                                                <small class="fw-semibold">${{ act.cu_total|floatformat:2 }}</small>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                <div id="noResults" class="text-center text-muted py-4 d-none">
+                                    <i class="bi bi-search me-1"></i>No se encontraron actividades
+                                </div>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="mt-4 d-flex justify-content-between">
                         <a href="{% url 'costs:activitykit_list' %}" class="btn btn-outline-secondary">Cancelar</a>
                         <button type="submit" class="btn btn-success">Guardar Kit</button>
@@ -35,4 +111,82 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const searchInput = document.getElementById('searchActivities');
+    const divisionFilter = document.getElementById('filterDivision');
+    const rows = Array.from(document.querySelectorAll('.activity-row'));
+    const selectedCountEl = document.getElementById('selectedCount');
+    const visibleCountEl = document.getElementById('visibleCount');
+    const noResults = document.getElementById('noResults');
+
+    function highlightRow(row) {
+        const checked = row.querySelector('.activity-checkbox').checked;
+        row.classList.toggle('table-primary', checked);
+    }
+
+    function updateCount() {
+        const checked = document.querySelectorAll('.activity-checkbox:checked').length;
+        selectedCountEl.textContent = checked;
+    }
+
+    function filterRows() {
+        const term = searchInput.value.toLowerCase().trim();
+        const division = divisionFilter.value;
+        let visible = 0;
+
+        rows.forEach(row => {
+            const matchSearch = !term || row.dataset.code.includes(term) || row.dataset.desc.includes(term);
+            const matchDivision = !division || row.dataset.division === division;
+            const show = matchSearch && matchDivision;
+            row.style.display = show ? '' : 'none';
+            if (show) visible++;
+        });
+
+        visibleCountEl.textContent = visible;
+        noResults.classList.toggle('d-none', visible > 0);
+    }
+
+    // Click en fila toggle checkbox
+    rows.forEach(row => {
+        highlightRow(row);
+        row.addEventListener('click', function (e) {
+            if (e.target.type === 'checkbox') return;
+            const cb = this.querySelector('.activity-checkbox');
+            cb.checked = !cb.checked;
+            highlightRow(this);
+            updateCount();
+        });
+        row.querySelector('.activity-checkbox').addEventListener('change', function () {
+            highlightRow(row);
+            updateCount();
+        });
+    });
+
+    searchInput.addEventListener('input', filterRows);
+    divisionFilter.addEventListener('change', filterRows);
+
+    document.getElementById('selectVisible').addEventListener('click', function () {
+        rows.forEach(row => {
+            if (row.style.display !== 'none') {
+                row.querySelector('.activity-checkbox').checked = true;
+                highlightRow(row);
+            }
+        });
+        updateCount();
+    });
+
+    document.getElementById('clearAll').addEventListener('click', function () {
+        rows.forEach(row => {
+            row.querySelector('.activity-checkbox').checked = false;
+            highlightRow(row);
+        });
+        updateCount();
+    });
+
+    filterRows();
+    updateCount();
+});
+</script>
 {% endblock %}

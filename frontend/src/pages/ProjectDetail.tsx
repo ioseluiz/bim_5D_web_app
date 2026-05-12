@@ -120,7 +120,13 @@ const ProjectDetail = () => {
             <Link to="/projects" className="btn btn-outline-secondary btn-sm">
               <i className="bi bi-arrow-left me-1"></i>Volver
             </Link>
-            <button 
+            <Link to={`/projects/${id}/kits`} className="btn btn-warning btn-sm fw-bold shadow-sm">
+              <i className="bi bi-box-seam me-2"></i>Kits del Proyecto
+            </Link>
+            <Link to={`/projects/${id}/budget`} className="btn btn-success btn-sm fw-bold shadow-sm">
+              <i className="bi bi-table me-2"></i>Presupuesto
+            </Link>
+            <button
               className="btn btn-primary btn-sm px-3 shadow-sm"
               onClick={() => setShowUploadModal(true)}
             >
@@ -200,7 +206,7 @@ const ProjectDetail = () => {
         <div className="col-lg-9">
           <div className="card shadow-sm border-0 bg-dark rounded-3 overflow-hidden" style={{ height: '78vh', position: 'relative' }}>
             {selectedModel ? (
-              <BimViewer ifcUrl={selectedModel.archivo} onElementSelect={handleElementSelect} />
+              <BimViewer ifcUrl={selectedModel.archivo} projectId={id} onElementSelect={handleElementSelect} />
             ) : (
               <div className="h-100 d-flex flex-column align-items-center justify-content-center bg-light text-muted border border-dashed rounded-3">
                 <div className="text-center p-5">

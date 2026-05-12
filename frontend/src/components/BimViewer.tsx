@@ -8,8 +8,17 @@ import * as THREE from 'three';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
+interface ActivityKit {
+  id: number;
+  nombre: string;
+  descripcion: string;
+  activities: { id: number; codigo_actividad: string }[];
+  proyecto?: number | null;
+}
+
 interface BimViewerProps {
   ifcUrl: string;
+  projectId?: string | number;
   onElementSelect?: (data: { guid: string; category: string; tipo: string }) => void;
 }
 
@@ -34,7 +43,8 @@ type FilterState = Record<string, Set<string>>;
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
-const TARGET_PROPS = ['Master Format', 'codigo_actividad', 'division'] as const;
+/** Propiedades escaneadas del IFC — el orden aquí define el scan, no la UI */
+const IFC_PROPS = ['division', 'codigo_actividad', 'Master Format'] as const;
 
 const PROP_LABELS: Record<string, string> = {
   'Master Format':    'Master Format',
@@ -53,6 +63,10 @@ const PROP_COLORS: Record<string, string> = {
   'codigo_actividad': '#38bdf8',
   'division':         '#a78bfa',
 };
+
+const KIT_COLOR  = '#10b981';
+const KIT_ICON   = '⬟';
+const KIT_LABEL  = 'Kit Actividades';
 
 // ─── Attribute helpers ─────────────────────────────────────────────────────────
 
@@ -236,17 +250,31 @@ function intersectModelIdMaps(a: OBC.ModelIdMap, b: OBC.ModelIdMap): OBC.ModelId
  * Computes the ModelIdMap to isolate based on active filters.
  * - Within each property: OR (union) of all selected values.
  * - Across properties: AND (intersection).
+ * - kitDerivedCodes: when kits are selected but no explicit codigo_actividad
+ *   values are chosen, automatically uses the kit's activity codes.
  * Returns null when no filters are active (show all).
  */
 function computeFilteredMap(
   multiIndex: MultiPropertyIndex,
   filterState: FilterState,
+  kitDerivedCodes: Set<string> | null = null,
 ): OBC.ModelIdMap | null {
-  const activeFilters = Object.entries(filterState).filter(([, vals]) => vals.size > 0);
+  // Effective state: apply kit-derived codes when no manual code selection
+  const effective: FilterState = { ...filterState };
+  if (
+    kitDerivedCodes &&
+    kitDerivedCodes.size > 0 &&
+    (!effective['codigo_actividad'] || effective['codigo_actividad'].size === 0)
+  ) {
+    effective['codigo_actividad'] = new Set(kitDerivedCodes);
+  }
+
+  const activeFilters = Object.entries(effective).filter(([, vals]) => vals.size > 0);
   if (activeFilters.length === 0) return null;
 
   const perPropMaps: OBC.ModelIdMap[] = [];
   for (const [propName, selectedVals] of activeFilters) {
+
     const propIdx = multiIndex.get(propName);
     if (!propIdx) continue;
     const toUnion: OBC.ModelIdMap[] = [];
@@ -274,28 +302,262 @@ interface FilterPanelProps {
   multiIndex: MultiPropertyIndex;
   filterState: FilterState;
   scanning: boolean;
+  kits: ActivityKit[];
+  selectedKitIds: Set<number>;
+  kitDerivedCodes: Set<string> | null;
   onToggle: (propName: string, value: string) => void;
   onClearProp: (propName: string) => void;
   onClearAll: () => void;
+  onToggleKit: (kitId: number) => void;
+  onClearKits: () => void;
   onClose: () => void;
 }
 
 const FilterPanel: React.FC<FilterPanelProps> = ({
-  multiIndex, filterState, scanning, onToggle, onClearProp, onClearAll, onClose,
+  multiIndex, filterState, scanning,
+  kits, selectedKitIds, kitDerivedCodes,
+  onToggle, onClearProp, onClearAll,
+  onToggleKit, onClearKits, onClose,
 }) => {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(TARGET_PROPS.map((p) => [p, true])),
-  );
-  const [search, setSearch] = useState<Record<string, string>>(
-    () => Object.fromEntries(TARGET_PROPS.map((p) => [p, ''])),
-  );
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({
+    division: true, __kits__: true, codigo_actividad: true, 'Master Format': true,
+  }));
+  const [search, setSearch] = useState<Record<string, string>>(() => ({
+    division: '', __kits__: '', codigo_actividad: '', 'Master Format': '',
+  }));
 
-  const totalActive = Object.values(filterState).reduce((a, s) => a + s.size, 0);
+  const totalActive =
+    Object.values(filterState).reduce((a, s) => a + s.size, 0) + selectedKitIds.size;
   const totalElems = (map: OBC.ModelIdMap) =>
     Object.values(map).reduce((a, s) => a + (s as Set<number>).size, 0);
+  const toggleExpand = (p: string) => setExpanded((e) => ({ ...e, [p]: !e[p] }));
 
-  const toggleExpand = (p: string) =>
-    setExpanded((e) => ({ ...e, [p]: !e[p] }));
+  /** Renders an IFC property section */
+  const renderPropSection = (propName: string) => {
+    const propIdx = multiIndex.get(propName);
+    const color = PROP_COLORS[propName];
+    const icon = PROP_ICONS[propName];
+    const label = PROP_LABELS[propName];
+    const selected = filterState[propName] ?? new Set<string>();
+    const isExpanded = expanded[propName] ?? true;
+    const q = search[propName] ?? '';
+
+    // For codigo_actividad: restrict visible entries when kits are selected
+    const entries = propIdx
+      ? [...propIdx.entries()]
+          .filter(([v]) => {
+            if (propName === 'codigo_actividad' && kitDerivedCodes && kitDerivedCodes.size > 0) {
+              if (!kitDerivedCodes.has(v)) return false;
+            }
+            return v.toLowerCase().includes(q.toLowerCase());
+          })
+          .sort(([a], [b]) => a.localeCompare(b))
+      : [];
+    const activeCount = selected.size;
+
+    return (
+      <div key={propName} style={fpSt.section}>
+        <div
+          style={{ ...fpSt.sectionHeader, borderLeftColor: color }}
+          onClick={() => toggleExpand(propName)}
+        >
+          <span style={{ ...fpSt.sectionIcon, color }}>{icon}</span>
+          <span style={{ ...fpSt.sectionLabel, color }}>{label}</span>
+          {activeCount > 0 && (
+            <span style={{ ...fpSt.activeBadge, backgroundColor: `${color}28`, color }}>
+              {activeCount}
+            </span>
+          )}
+          <div style={{ flex: 1 }} />
+          {propIdx && propIdx.size > 0 && (
+            <span style={fpSt.totalCount}>
+              {propName === 'codigo_actividad' && kitDerivedCodes
+                ? `${entries.length}/${propIdx.size}`
+                : propIdx.size}
+            </span>
+          )}
+          {activeCount > 0 && (
+            <button
+              style={fpSt.clearPropBtn}
+              onClick={(e) => { e.stopPropagation(); onClearProp(propName); }}
+              title={`Limpiar ${label}`}
+            >✕</button>
+          )}
+          <span style={{ ...fpSt.chevron, transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
+            ▾
+          </span>
+        </div>
+        {isExpanded && (
+          <div>
+            {!propIdx || propIdx.size === 0 ? (
+              <div style={fpSt.emptySection}>No detectado en el modelo</div>
+            ) : entries.length === 0 && !q ? (
+              <div style={fpSt.emptySection}>
+                Sin actividades del kit seleccionado en el modelo
+              </div>
+            ) : (
+              <>
+                {/* Show kit restriction notice */}
+                {propName === 'codigo_actividad' && kitDerivedCodes && kitDerivedCodes.size > 0 && (
+                  <div style={fpSt.kitNotice}>
+                    <span style={{ color: KIT_COLOR }}>{KIT_ICON}</span>
+                    {' '}Filtrado por kit seleccionado
+                  </div>
+                )}
+                {(propIdx.size > 6 || (propName === 'codigo_actividad' && entries.length > 6)) && (
+                  <div style={fpSt.searchWrap}>
+                    <input
+                      style={fpSt.searchInput}
+                      placeholder={`Buscar en ${label}…`}
+                      value={q}
+                      onChange={(e) => setSearch((s) => ({ ...s, [propName]: e.target.value }))}
+                    />
+                  </div>
+                )}
+                <div style={fpSt.valueList}>
+                  {entries.map(([value, map]) => {
+                    const isActive = selected.has(value);
+                    return (
+                      <label
+                        key={value}
+                        style={{
+                          ...fpSt.valueRow,
+                          ...(isActive ? { backgroundColor: `${color}10`, borderLeftColor: color } : {}),
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isActive}
+                          onChange={() => onToggle(propName, value)}
+                          style={{ display: 'none' }}
+                        />
+                        <span style={{
+                          ...fpSt.checkbox,
+                          ...(isActive ? { backgroundColor: color, borderColor: color, color: '#0f1117' } : {}),
+                        }}>
+                          {isActive ? '✓' : ''}
+                        </span>
+                        <span style={{ ...fpSt.valueLabel, ...(isActive ? { color: '#e2e8f0' } : {}) }} title={value}>
+                          {value}
+                        </span>
+                        <span style={{
+                          ...fpSt.valueBadge,
+                          ...(isActive ? { backgroundColor: `${color}28`, color } : {}),
+                        }}>
+                          {totalElems(map)}
+                        </span>
+                      </label>
+                    );
+                  })}
+                  {entries.length === 0 && q && (
+                    <div style={fpSt.noResults}>Sin resultados para "{q}"</div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /** Renders the Kit Actividades section (API-based, not IFC) */
+  const renderKitsSection = () => {
+    const isExpanded = expanded['__kits__'] ?? true;
+    const q = search['__kits__'] ?? '';
+    const filteredKits = kits.filter(k => k.nombre.toLowerCase().includes(q.toLowerCase()));
+    const activeCount = selectedKitIds.size;
+
+    return (
+      <div style={fpSt.section}>
+        <div
+          style={{ ...fpSt.sectionHeader, borderLeftColor: KIT_COLOR }}
+          onClick={() => toggleExpand('__kits__')}
+        >
+          <span style={{ ...fpSt.sectionIcon, color: KIT_COLOR }}>{KIT_ICON}</span>
+          <span style={{ ...fpSt.sectionLabel, color: KIT_COLOR }}>{KIT_LABEL}</span>
+          {activeCount > 0 && (
+            <span style={{ ...fpSt.activeBadge, backgroundColor: `${KIT_COLOR}28`, color: KIT_COLOR }}>
+              {activeCount}
+            </span>
+          )}
+          <div style={{ flex: 1 }} />
+          {kits.length > 0 && <span style={fpSt.totalCount}>{kits.length}</span>}
+          {activeCount > 0 && (
+            <button
+              style={fpSt.clearPropBtn}
+              onClick={(e) => { e.stopPropagation(); onClearKits(); }}
+              title="Limpiar kits"
+            >✕</button>
+          )}
+          <span style={{ ...fpSt.chevron, transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
+            ▾
+          </span>
+        </div>
+        {isExpanded && (
+          <div>
+            {kits.length === 0 ? (
+              <div style={fpSt.emptySection}>No hay kits para este proyecto</div>
+            ) : (
+              <>
+                {kits.length > 6 && (
+                  <div style={fpSt.searchWrap}>
+                    <input
+                      style={fpSt.searchInput}
+                      placeholder="Buscar kit…"
+                      value={q}
+                      onChange={(e) => setSearch((s) => ({ ...s, '__kits__': e.target.value }))}
+                    />
+                  </div>
+                )}
+                <div style={fpSt.valueList}>
+                  {filteredKits.map(kit => {
+                    const isActive = selectedKitIds.has(kit.id);
+                    const isProject = kit.proyecto != null;
+                    return (
+                      <label
+                        key={kit.id}
+                        style={{
+                          ...fpSt.valueRow,
+                          ...(isActive ? { backgroundColor: `${KIT_COLOR}10`, borderLeftColor: KIT_COLOR } : {}),
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isActive}
+                          onChange={() => onToggleKit(kit.id)}
+                          style={{ display: 'none' }}
+                        />
+                        <span style={{
+                          ...fpSt.checkbox,
+                          ...(isActive ? { backgroundColor: KIT_COLOR, borderColor: KIT_COLOR, color: '#0f1117' } : {}),
+                        }}>
+                          {isActive ? '✓' : ''}
+                        </span>
+                        <span style={{ ...fpSt.valueLabel, ...(isActive ? { color: '#e2e8f0' } : {}) }} title={kit.nombre}>
+                          {isProject && <span style={{ color: '#f59e0b', marginRight: 3 }}>★</span>}
+                          {kit.nombre}
+                        </span>
+                        <span style={{
+                          ...fpSt.valueBadge,
+                          ...(isActive ? { backgroundColor: `${KIT_COLOR}28`, color: KIT_COLOR } : {}),
+                        }}>
+                          {kit.activities.length}
+                        </span>
+                      </label>
+                    );
+                  })}
+                  {filteredKits.length === 0 && q && (
+                    <div style={fpSt.noResults}>Sin resultados para "{q}"</div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div style={fpSt.container}>
@@ -324,7 +586,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
       </div>
 
-      {/* Body */}
+      {/* Body — orden: División → Kit → Código Actividad → Master Format */}
       <div style={fpSt.body}>
         {scanning && (
           <div style={fpSt.scanningWrap}>
@@ -332,127 +594,14 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             <span style={fpSt.scanningText}>Leyendo IfcPropertySets…</span>
           </div>
         )}
-
-        {!scanning && TARGET_PROPS.map((propName) => {
-          const propIdx = multiIndex.get(propName);
-          const color = PROP_COLORS[propName];
-          const icon = PROP_ICONS[propName];
-          const label = PROP_LABELS[propName];
-          const selected = filterState[propName] ?? new Set<string>();
-          const isExpanded = expanded[propName] ?? true;
-          const q = search[propName] ?? '';
-          const entries = propIdx
-            ? [...propIdx.entries()]
-                .filter(([v]) => v.toLowerCase().includes(q.toLowerCase()))
-                .sort(([a], [b]) => a.localeCompare(b))
-            : [];
-          const activeCount = selected.size;
-
-          return (
-            <div key={propName} style={fpSt.section}>
-              {/* Section header */}
-              <div
-                style={{ ...fpSt.sectionHeader, borderLeftColor: color }}
-                onClick={() => toggleExpand(propName)}
-              >
-                <span style={{ ...fpSt.sectionIcon, color }}>{icon}</span>
-                <span style={{ ...fpSt.sectionLabel, color }}>{label}</span>
-                {activeCount > 0 && (
-                  <span style={{ ...fpSt.activeBadge, backgroundColor: `${color}28`, color }}>
-                    {activeCount}
-                  </span>
-                )}
-                <div style={{ flex: 1 }} />
-                {propIdx && propIdx.size > 0 && (
-                  <span style={fpSt.totalCount}>{propIdx.size}</span>
-                )}
-                {activeCount > 0 && (
-                  <button
-                    style={fpSt.clearPropBtn}
-                    onClick={(e) => { e.stopPropagation(); onClearProp(propName); }}
-                    title={`Limpiar ${label}`}
-                  >✕</button>
-                )}
-                <span style={{ ...fpSt.chevron, transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
-                  ▾
-                </span>
-              </div>
-
-              {/* Section content */}
-              {isExpanded && (
-                <div>
-                  {!propIdx || propIdx.size === 0 ? (
-                    <div style={fpSt.emptySection}>No detectado en el modelo</div>
-                  ) : (
-                    <>
-                      {propIdx.size > 6 && (
-                        <div style={fpSt.searchWrap}>
-                          <input
-                            style={fpSt.searchInput}
-                            placeholder={`Buscar en ${label}…`}
-                            value={q}
-                            onChange={(e) => setSearch((s) => ({ ...s, [propName]: e.target.value }))}
-                          />
-                        </div>
-                      )}
-                      <div style={fpSt.valueList}>
-                        {entries.map(([value, map]) => {
-                          const isActive = selected.has(value);
-                          return (
-                            <label
-                              key={value}
-                              style={{
-                                ...fpSt.valueRow,
-                                ...(isActive
-                                  ? { backgroundColor: `${color}10`, borderLeftColor: color }
-                                  : {}),
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isActive}
-                                onChange={() => onToggle(propName, value)}
-                                style={{ display: 'none' }}
-                              />
-                              <span style={{
-                                ...fpSt.checkbox,
-                                ...(isActive
-                                  ? { backgroundColor: color, borderColor: color, color: '#0f1117' }
-                                  : {}),
-                              }}>
-                                {isActive ? '✓' : ''}
-                              </span>
-                              <span
-                                style={{
-                                  ...fpSt.valueLabel,
-                                  ...(isActive ? { color: '#e2e8f0' } : {}),
-                                }}
-                                title={value}
-                              >
-                                {value}
-                              </span>
-                              <span style={{
-                                ...fpSt.valueBadge,
-                                ...(isActive
-                                  ? { backgroundColor: `${color}28`, color }
-                                  : {}),
-                              }}>
-                                {totalElems(map)}
-                              </span>
-                            </label>
-                          );
-                        })}
-                        {entries.length === 0 && q && (
-                          <div style={fpSt.noResults}>Sin resultados para "{q}"</div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {!scanning && (
+          <>
+            {renderPropSection('division')}
+            {renderKitsSection()}
+            {renderPropSection('codigo_actividad')}
+            {renderPropSection('Master Format')}
+          </>
+        )}
       </div>
     </div>
   );
@@ -570,6 +719,7 @@ const fpSt: Record<string, React.CSSProperties> = {
   valueLabel:   { flex:1, fontSize:10, color:'#64748b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' },
   valueBadge:   { flexShrink:0, fontSize:9, backgroundColor:'rgba(255,255,255,0.06)', color:'#475569', padding:'1px 5px', borderRadius:8, minWidth:18, textAlign:'center' },
   noResults:    { padding:'8px 12px', fontSize:10, color:'#475569' },
+  kitNotice:    { padding:'4px 12px 3px', fontSize:9, color:'#64748b', borderBottom:'1px solid rgba(16,185,129,0.12)', backgroundColor:'rgba(16,185,129,0.04)' },
 };
 
 const propSt: Record<string, React.CSSProperties> = {
@@ -589,9 +739,9 @@ const propSt: Record<string, React.CSSProperties> = {
 // ─── Main BimViewer ────────────────────────────────────────────────────────────
 
 const EMPTY_FILTER_STATE = (): FilterState =>
-  Object.fromEntries(TARGET_PROPS.map((p) => [p, new Set<string>()]));
+  Object.fromEntries(IFC_PROPS.map((p) => [p, new Set<string>()]));
 
-const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, onElementSelect }) => {
+const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelect }) => {
   const containerRef  = useRef<HTMLDivElement>(null);
   const componentsRef = useRef<OBC.Components | null>(null);
   const hiderRef      = useRef<OBC.Hider | null>(null);
@@ -605,14 +755,39 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, onElementSelect }) => {
   const [scanning,      setScanning]      = useState(false);
   const [filterState,   setFilterState]   = useState<FilterState>(EMPTY_FILTER_STATE);
 
+  // Kit filter state
+  const [kits,            setKits]            = useState<ActivityKit[]>([]);
+  const [selectedKitIds,  setSelectedKitIds]  = useState<Set<number>>(new Set());
+  const [kitDerivedCodes, setKitDerivedCodes] = useState<Set<string> | null>(null);
+
   const onElementSelectRef = useRef(onElementSelect);
   useEffect(() => { onElementSelectRef.current = onElementSelect; }, [onElementSelect]);
 
-  // ── Apply filter whenever filterState or multiIndex changes ──────────────
+  // Fetch kits from API when projectId changes
+  useEffect(() => {
+    if (!projectId) return;
+    const load = async () => {
+      try {
+        const [masterRes, projectRes] = await Promise.all([
+          fetch('http://localhost:8000/api/activity-kits/').then(r => r.json()),
+          fetch(`http://localhost:8000/api/activity-kits/?proyecto=${projectId}`).then(r => r.json()),
+        ]);
+        setKits([
+          ...(masterRes as ActivityKit[]),
+          ...(projectRes as ActivityKit[]),
+        ]);
+      } catch (err) {
+        console.error('[BIM] Error cargando kits:', err);
+      }
+    };
+    load();
+  }, [projectId]);
+
+  // ── Apply filter whenever filterState, multiIndex, or kitDerivedCodes changes
   useEffect(() => {
     const hider = hiderRef.current;
     if (!hider) return;
-    const filtered = computeFilteredMap(multiIndex, filterState);
+    const filtered = computeFilteredMap(multiIndex, filterState, kitDerivedCodes);
     (async () => {
       if (filtered === null) {
         await hider.set(true);
@@ -620,7 +795,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, onElementSelect }) => {
         await hider.isolate(filtered);
       }
     })();
-  }, [filterState, multiIndex]);
+  }, [filterState, multiIndex, kitDerivedCodes]);
 
   // ── Filter handlers ──────────────────────────────────────────────────────
   const handleToggle = useCallback((propName: string, value: string) => {
@@ -639,7 +814,32 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, onElementSelect }) => {
 
   const handleClearAll = useCallback(() => {
     setFilterState(EMPTY_FILTER_STATE());
+    setSelectedKitIds(new Set());
+    setKitDerivedCodes(null);
   }, []);
+
+  // ── Kit filter handlers ──────────────────────────────────────────────────
+  const handleToggleKit = (kitId: number) => {
+    setSelectedKitIds(prev => {
+      const next = new Set(prev);
+      if (next.has(kitId)) next.delete(kitId); else next.add(kitId);
+      // Derive activity codes from selected kits
+      const codes = new Set<string>();
+      kits.filter(k => next.has(k.id)).forEach(k =>
+        k.activities.forEach(a => codes.add(a.codigo_actividad))
+      );
+      setKitDerivedCodes(next.size > 0 ? codes : null);
+      return next;
+    });
+    // Clear manual code selection so kit drives the filter
+    setFilterState(prev => ({ ...prev, 'codigo_actividad': new Set<string>() }));
+  };
+
+  const handleClearKits = () => {
+    setSelectedKitIds(new Set());
+    setKitDerivedCodes(null);
+    setFilterState(prev => ({ ...prev, 'codigo_actividad': new Set<string>() }));
+  };
 
   // ── Setup ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -783,7 +983,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, onElementSelect }) => {
           const idx = await scanProperties(
             bufferCopy,
             fragmentsModelId,
-            TARGET_PROPS,
+            IFC_PROPS,
             'https://unpkg.com/web-ifc@0.0.77/',
           );
 
@@ -811,13 +1011,17 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, onElementSelect }) => {
   }, [ifcUrl]);
 
   // ── Status bar summary ───────────────────────────────────────────────────
-  const activeFilterParts = TARGET_PROPS
-    .filter((p) => (filterState[p]?.size ?? 0) > 0)
-    .map((p) => `${PROP_LABELS[p]} (${filterState[p].size})`);
+  const activeFilterParts = [
+    ...IFC_PROPS
+      .filter((p) => (filterState[p]?.size ?? 0) > 0)
+      .map((p) => `${PROP_LABELS[p]} (${filterState[p].size})`),
+    ...(selectedKitIds.size > 0 ? [`${KIT_LABEL} (${selectedKitIds.size})`] : []),
+  ];
 
-  const filteredMap = activeFilterParts.length > 0
-    ? computeFilteredMap(multiIndex, filterState)
-    : null;
+  const filteredMap = computeFilteredMap(multiIndex, filterState, kitDerivedCodes);
+
+  const totalActiveCount =
+    IFC_PROPS.reduce((a, p) => a + (filterState[p]?.size ?? 0), 0) + selectedKitIds.size;
 
   const statusText = activeFilterParts.length > 0
     ? `Filtrando: ${activeFilterParts.join(' · ')} → ${filteredMap ? countModelIdMap(filteredMap) : 0} elementos`
@@ -835,9 +1039,14 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, onElementSelect }) => {
           multiIndex={multiIndex}
           filterState={filterState}
           scanning={scanning}
+          kits={kits}
+          selectedKitIds={selectedKitIds}
+          kitDerivedCodes={kitDerivedCodes}
           onToggle={handleToggle}
           onClearProp={handleClearProp}
           onClearAll={handleClearAll}
+          onToggleKit={handleToggleKit}
+          onClearKits={handleClearKits}
           onClose={() => setFilterPanelVis(false)}
         />
       ) : (
@@ -852,12 +1061,12 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, onElementSelect }) => {
           }}
         >
           ⬡ Filtros BIM
-          {activeFilterParts.length > 0 && (
+          {totalActiveCount > 0 && (
             <span style={{
               marginLeft:6, backgroundColor:'#38bdf8', color:'#0f1117',
               borderRadius:8, fontSize:10, padding:'1px 6px', fontWeight:700,
             }}>
-              {activeFilterParts.reduce((a, _, i) => a + (filterState[TARGET_PROPS[i]]?.size ?? 0), 0)}
+              {totalActiveCount}
             </span>
           )}
         </button>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as OBC from '@thatopen/components';
 import * as OBF from '@thatopen/components-front';
 import * as FRAGS from '@thatopen/fragments';
@@ -10,16 +10,33 @@ import * as THREE from 'three';
 
 interface ActivityKit {
   id: number;
+  codigo_kit: string;
   nombre: string;
   descripcion: string;
-  activities: { id: number; codigo_actividad: string }[];
+  kit_activities: { id: number; codigo_actividad: string }[];
   proyecto?: number | null;
+}
+
+interface BudgetItemSummary {
+  id: number;
+  cantidad: string;
+  actividad_detail: {
+    cu_total: string;
+    activity_kit: number | null;
+  };
+}
+
+interface KitBudgetEntry {
+  kit: ActivityKit;
+  total: number;
+  itemCount: number;
 }
 
 interface BimViewerProps {
   ifcUrl: string;
   projectId?: string | number;
   onElementSelect?: (data: { guid: string; category: string; tipo: string }) => void;
+  onActiveKitIdsChange?: (kitIds: Set<number> | null) => void;
 }
 
 interface ElementProperties {
@@ -44,24 +61,24 @@ type FilterState = Record<string, Set<string>>;
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 /** Propiedades escaneadas del IFC — el orden aquí define el scan, no la UI */
-const IFC_PROPS = ['division', 'codigo_actividad', 'Master Format'] as const;
+const IFC_PROPS = ['division', 'codigo_kit_actividad', 'Master Format'] as const;
 
 const PROP_LABELS: Record<string, string> = {
-  'Master Format':    'Master Format',
-  'codigo_actividad': 'Código Actividad',
-  'division':         'División',
+  'Master Format':        'Master Format',
+  'codigo_kit_actividad': 'Código Kit Actividad',
+  'division':             'División',
 };
 
 const PROP_ICONS: Record<string, string> = {
-  'Master Format':    '◈',
-  'codigo_actividad': '⬡',
-  'division':         '◉',
+  'Master Format':        '◈',
+  'codigo_kit_actividad': '⬡',
+  'division':             '◉',
 };
 
 const PROP_COLORS: Record<string, string> = {
-  'Master Format':    '#f59e0b',
-  'codigo_actividad': '#38bdf8',
-  'division':         '#a78bfa',
+  'Master Format':        '#f59e0b',
+  'codigo_kit_actividad': '#38bdf8',
+  'division':             '#a78bfa',
 };
 
 const KIT_COLOR  = '#10b981';
@@ -264,9 +281,9 @@ function computeFilteredMap(
   if (
     kitDerivedCodes &&
     kitDerivedCodes.size > 0 &&
-    (!effective['codigo_actividad'] || effective['codigo_actividad'].size === 0)
+    (!effective['codigo_kit_actividad'] || effective['codigo_kit_actividad'].size === 0)
   ) {
-    effective['codigo_actividad'] = new Set(kitDerivedCodes);
+    effective['codigo_kit_actividad'] = new Set(kitDerivedCodes);
   }
 
   const activeFilters = Object.entries(effective).filter(([, vals]) => vals.size > 0);
@@ -320,10 +337,10 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
   onToggleKit, onClearKits, onClose,
 }) => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({
-    division: true, __kits__: true, codigo_actividad: true, 'Master Format': true,
+    division: true, __kits__: true, codigo_kit_actividad: true, 'Master Format': true,
   }));
   const [search, setSearch] = useState<Record<string, string>>(() => ({
-    division: '', __kits__: '', codigo_actividad: '', 'Master Format': '',
+    division: '', __kits__: '', codigo_kit_actividad: '', 'Master Format': '',
   }));
 
   const totalActive =
@@ -346,7 +363,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     const entries = propIdx
       ? [...propIdx.entries()]
           .filter(([v]) => {
-            if (propName === 'codigo_actividad' && kitDerivedCodes && kitDerivedCodes.size > 0) {
+            if (propName === 'codigo_kit_actividad' && kitDerivedCodes && kitDerivedCodes.size > 0) {
               if (!kitDerivedCodes.has(v)) return false;
             }
             return v.toLowerCase().includes(q.toLowerCase());
@@ -371,7 +388,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           <div style={{ flex: 1 }} />
           {propIdx && propIdx.size > 0 && (
             <span style={fpSt.totalCount}>
-              {propName === 'codigo_actividad' && kitDerivedCodes
+              {propName === 'codigo_kit_actividad' && kitDerivedCodes
                 ? `${entries.length}/${propIdx.size}`
                 : propIdx.size}
             </span>
@@ -398,13 +415,13 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             ) : (
               <>
                 {/* Show kit restriction notice */}
-                {propName === 'codigo_actividad' && kitDerivedCodes && kitDerivedCodes.size > 0 && (
+                {propName === 'codigo_kit_actividad' && kitDerivedCodes && kitDerivedCodes.size > 0 && (
                   <div style={fpSt.kitNotice}>
                     <span style={{ color: KIT_COLOR }}>{KIT_ICON}</span>
                     {' '}Filtrado por kit seleccionado
                   </div>
                 )}
-                {(propIdx.size > 6 || (propName === 'codigo_actividad' && entries.length > 6)) && (
+                {(propIdx.size > 6 || (propName === 'codigo_kit_actividad' && entries.length > 6)) && (
                   <div style={fpSt.searchWrap}>
                     <input
                       style={fpSt.searchInput}
@@ -465,7 +482,10 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
   const renderKitsSection = () => {
     const isExpanded = expanded['__kits__'] ?? true;
     const q = search['__kits__'] ?? '';
-    const filteredKits = kits.filter(k => k.nombre.toLowerCase().includes(q.toLowerCase()));
+    const filteredKits = kits.filter(k =>
+      k.nombre.toLowerCase().includes(q.toLowerCase()) ||
+      (k.codigo_kit?.toLowerCase() ?? '').includes(q.toLowerCase()),
+    );
     const activeCount = selectedKitIds.size;
 
     return (
@@ -534,15 +554,25 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
                         }}>
                           {isActive ? '✓' : ''}
                         </span>
-                        <span style={{ ...fpSt.valueLabel, ...(isActive ? { color: '#e2e8f0' } : {}) }} title={kit.nombre}>
+                        <span
+                          style={{ ...fpSt.valueLabel, ...(isActive ? { color: '#e2e8f0' } : {}), whiteSpace: 'normal', lineHeight: 1.3 }}
+                          title={`${kit.codigo_kit ? kit.codigo_kit + ' — ' : ''}${kit.nombre}`}
+                        >
                           {isProject && <span style={{ color: '#f59e0b', marginRight: 3 }}>★</span>}
-                          {kit.nombre}
+                          <span style={{ display: 'block', fontFamily: '"IBM Plex Mono",monospace', fontWeight: 700, fontSize: 10, color: isActive ? KIT_COLOR : '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {kit.codigo_kit || kit.nombre}
+                          </span>
+                          {kit.codigo_kit && (
+                            <span style={{ display: 'block', fontSize: 9, color: isActive ? '#94a3b8' : '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {kit.nombre}
+                            </span>
+                          )}
                         </span>
                         <span style={{
                           ...fpSt.valueBadge,
                           ...(isActive ? { backgroundColor: `${KIT_COLOR}28`, color: KIT_COLOR } : {}),
                         }}>
-                          {kit.activities.length}
+                          {kit.kit_activities.length}
                         </span>
                       </label>
                     );
@@ -598,7 +628,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           <>
             {renderPropSection('division')}
             {renderKitsSection()}
-            {renderPropSection('codigo_actividad')}
+            {renderPropSection('codigo_kit_actividad')}
             {renderPropSection('Master Format')}
           </>
         )}
@@ -682,6 +712,112 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ properties, loading, 
 
 // ─── Styles ────────────────────────────────────────────────────────────────────
 
+// ─── Budget Panel ──────────────────────────────────────────────────────────────
+
+const fmtCur = (n: number) =>
+  n.toLocaleString('es-PA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+interface BudgetPanelProps {
+  entries: KitBudgetEntry[];
+  activeBudgetKitIds: Set<number> | null;
+  loading: boolean;
+  onClose: () => void;
+}
+
+const BudgetPanel: React.FC<BudgetPanelProps> = ({
+  entries, activeBudgetKitIds, loading, onClose,
+}) => {
+  const isFiltered = activeBudgetKitIds !== null && activeBudgetKitIds.size > 0;
+  const activeEntries = isFiltered
+    ? entries.filter(e => activeBudgetKitIds!.has(e.kit.id))
+    : entries;
+  const filteredTotal = activeEntries.reduce((s, e) => s + e.total, 0);
+  const allTotal      = entries.reduce((s, e) => s + e.total, 0);
+
+  return (
+    <div style={bdgSt.container}>
+      <div style={bdgSt.header}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ color:'#10b981', fontSize:16, fontWeight:700, lineHeight:1 }}>$</span>
+          <div>
+            <div style={bdgSt.headerTitle}>Presupuesto</div>
+            <div style={bdgSt.headerSub}>
+              {isFiltered
+                ? `${activeEntries.length} de ${entries.length} kits seleccionados`
+                : `${entries.length} kit${entries.length !== 1 ? 's' : ''}`}
+            </div>
+          </div>
+        </div>
+        <button style={bdgSt.closeBtn} onClick={onClose} title="Minimizar">—</button>
+      </div>
+
+      <div style={bdgSt.body}>
+        {loading ? (
+          <div style={{ padding:'20px 14px', fontSize:11, color:'#64748b', textAlign:'center' }}>
+            <div style={{ width:18, height:18, borderRadius:'50%', border:'2px solid rgba(148,163,184,0.2)', borderTopColor:'#10b981', animation:'spin 0.8s linear infinite', margin:'0 auto 8px' }} />
+            Cargando presupuesto…
+          </div>
+        ) : entries.length === 0 ? (
+          <div style={{ padding:'20px 14px', fontSize:10, color:'#475569', textAlign:'center', fontStyle:'italic' }}>
+            No hay presupuesto definido para este proyecto
+          </div>
+        ) : (
+          entries.map(({ kit, total, itemCount }) => {
+            const isActive = !isFiltered || activeBudgetKitIds!.has(kit.id);
+            return (
+              <div key={kit.id} style={{ ...bdgSt.kitRow, opacity: isActive ? 1 : 0.2 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:5, flex:1, minWidth:0 }}>
+                  {kit.codigo_kit && (
+                    <span style={{
+                      ...bdgSt.kitCode,
+                      ...(isActive ? {} : { color:'#475569', borderColor:'rgba(71,85,105,0.3)', backgroundColor:'rgba(71,85,105,0.1)' }),
+                    }}>
+                      {kit.codigo_kit}
+                    </span>
+                  )}
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ ...bdgSt.kitName, color: isActive ? '#cbd5e1' : '#475569' }} title={kit.nombre}>
+                      {kit.nombre}
+                    </div>
+                    <div style={{ fontSize:9, color:'#475569' }}>
+                      {itemCount} actividad{itemCount !== 1 ? 'es' : ''}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ ...bdgSt.kitTotal, color: isActive ? '#10b981' : '#334155' }}>
+                  ${fmtCur(total)}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {entries.length > 0 && (
+        <div style={bdgSt.footer}>
+          {isFiltered ? (
+            <>
+              <div style={bdgSt.footerLabel}>Subtotal filtrado</div>
+              <div style={bdgSt.footerTotal}>${fmtCur(filteredTotal)}</div>
+              <div style={{ marginTop:5, paddingTop:5, borderTop:'1px solid rgba(255,255,255,0.06)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span style={{ fontSize:9, color:'#475569' }}>Total proyecto</span>
+                <span style={{ fontSize:10, color:'#475569', fontFamily:'"IBM Plex Mono",monospace' }}>
+                  ${fmtCur(allTotal)}
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={bdgSt.footerLabel}>Total general</div>
+              <div style={bdgSt.footerTotal}>${fmtCur(allTotal)}</div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const BASE: React.CSSProperties = {
   backgroundColor:'rgba(15,17,23,0.93)', backdropFilter:'blur(12px)',
   borderRadius:'10px', border:'1px solid rgba(255,255,255,0.08)',
@@ -736,12 +872,28 @@ const propSt: Record<string, React.CSSProperties> = {
   rowValue:     { fontSize:11, color:'#e2e8f0', wordBreak:'break-all', flex:1, lineHeight:1.5 },
 };
 
+const bdgSt: Record<string, React.CSSProperties> = {
+  container:   { ...BASE, position:'absolute', bottom:'16px', right:'16px', width:270, maxHeight:'calc(48% - 16px)', zIndex:1000 },
+  header:      { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'11px 14px', borderBottom:'1px solid rgba(255,255,255,0.07)', backgroundColor:'rgba(255,255,255,0.03)', flexShrink:0 },
+  headerTitle: { fontSize:11, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'#94a3b8' },
+  headerSub:   { fontSize:10, color:'#64748b', marginTop:2 },
+  closeBtn:    { background:'none', border:'none', color:'#64748b', cursor:'pointer', fontSize:16, padding:'2px 5px', borderRadius:4, lineHeight:1 },
+  body:        { overflowY:'auto', flex:1 },
+  kitRow:      { display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'7px 12px', borderBottom:'1px solid rgba(255,255,255,0.04)', transition:'opacity 0.2s' },
+  kitCode:     { flexShrink:0, fontSize:9, backgroundColor:'rgba(16,185,129,0.12)', color:'#10b981', border:'1px solid rgba(16,185,129,0.2)', borderRadius:3, padding:'1px 5px', fontFamily:'"IBM Plex Mono",monospace', fontWeight:700 },
+  kitName:     { fontSize:10, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' },
+  kitTotal:    { flexShrink:0, fontSize:10, fontFamily:'"IBM Plex Mono",monospace', fontWeight:600 },
+  footer:      { padding:'10px 14px', borderTop:'1px solid rgba(255,255,255,0.08)', backgroundColor:'rgba(16,185,129,0.05)', flexShrink:0 },
+  footerLabel: { fontSize:9, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:3 },
+  footerTotal: { fontSize:15, fontWeight:700, color:'#10b981', fontFamily:'"IBM Plex Mono",monospace' },
+};
+
 // ─── Main BimViewer ────────────────────────────────────────────────────────────
 
 const EMPTY_FILTER_STATE = (): FilterState =>
   Object.fromEntries(IFC_PROPS.map((p) => [p, new Set<string>()]));
 
-const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelect }) => {
+const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelect, onActiveKitIdsChange }) => {
   const containerRef  = useRef<HTMLDivElement>(null);
   const componentsRef = useRef<OBC.Components | null>(null);
   const hiderRef      = useRef<OBC.Hider | null>(null);
@@ -759,6 +911,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
   const [kits,            setKits]            = useState<ActivityKit[]>([]);
   const [selectedKitIds,  setSelectedKitIds]  = useState<Set<number>>(new Set());
   const [kitDerivedCodes, setKitDerivedCodes] = useState<Set<string> | null>(null);
+
 
   const onElementSelectRef = useRef(onElementSelect);
   useEffect(() => { onElementSelectRef.current = onElementSelect; }, [onElementSelect]);
@@ -823,23 +976,38 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     setSelectedKitIds(prev => {
       const next = new Set(prev);
       if (next.has(kitId)) next.delete(kitId); else next.add(kitId);
-      // Derive activity codes from selected kits
+      // Derive kit codes — these are the values stamped as codigo_kit_actividad in the IFC model
       const codes = new Set<string>();
-      kits.filter(k => next.has(k.id)).forEach(k =>
-        k.activities.forEach(a => codes.add(a.codigo_actividad))
-      );
+      kits.filter(k => next.has(k.id) && k.codigo_kit).forEach(k => codes.add(k.codigo_kit));
       setKitDerivedCodes(next.size > 0 ? codes : null);
       return next;
     });
-    // Clear manual code selection so kit drives the filter
-    setFilterState(prev => ({ ...prev, 'codigo_actividad': new Set<string>() }));
+    // Clear manual selection so kit drives the filter
+    setFilterState(prev => ({ ...prev, 'codigo_kit_actividad': new Set<string>() }));
   };
 
   const handleClearKits = () => {
     setSelectedKitIds(new Set());
     setKitDerivedCodes(null);
-    setFilterState(prev => ({ ...prev, 'codigo_actividad': new Set<string>() }));
+    setFilterState(prev => ({ ...prev, 'codigo_kit_actividad': new Set<string>() }));
   };
+
+  // ── Budget filter computed ────────────────────────────────────────────────
+
+  const activeBudgetKitIds = useMemo((): Set<number> | null => {
+    if (selectedKitIds.size > 0) return selectedKitIds;
+    const selectedCodes = filterState['codigo_kit_actividad'];
+    if (selectedCodes && selectedCodes.size > 0) {
+      const ids = new Set<number>();
+      kits.forEach(k => { if (k.codigo_kit && selectedCodes.has(k.codigo_kit)) ids.add(k.id); });
+      return ids;
+    }
+    return null;
+  }, [selectedKitIds, filterState, kits]);
+
+  useEffect(() => {
+    onActiveKitIdsChange?.(activeBudgetKitIds);
+  }, [activeBudgetKitIds]);
 
   // ── Setup ────────────────────────────────────────────────────────────────
   useEffect(() => {

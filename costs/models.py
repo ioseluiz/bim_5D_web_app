@@ -27,6 +27,13 @@ class Activity(models.Model):
         related_name="activities",
         verbose_name="Proyecto"
     )
+    activity_kit = models.ForeignKey(
+        'ActivityKit',
+        on_delete=models.CASCADE,
+        null=True, blank=True,
+        related_name="kit_activities",
+        verbose_name="Kit de Actividades"
+    )
     base_actividad = models.ForeignKey(
         'self',
         on_delete=models.SET_NULL,
@@ -42,17 +49,18 @@ class Activity(models.Model):
         verbose_name = "Actividad"
         verbose_name_plural = "Actividades"
         constraints = [
+            # Solo las actividades maestras (sin proyecto ni kit) deben tener codigo único
             models.UniqueConstraint(
                 fields=['codigo_actividad'],
-                condition=models.Q(proyecto__isnull=True),
+                condition=models.Q(proyecto__isnull=True, activity_kit__isnull=True),
                 name='unique_master_codigo_actividad'
             ),
         ]
 
 class ActivityKit(models.Model):
+    codigo_kit = models.CharField(max_length=50, unique=True, null=True, blank=True, verbose_name="Código del Kit")
     nombre = models.CharField(max_length=255, verbose_name="Nombre del Kit")
     descripcion = models.TextField(blank=True, null=True, verbose_name="Descripción")
-    activities = models.ManyToManyField(Activity, related_name="kits", blank=True, verbose_name="Actividades")
     proyecto = models.ForeignKey(
         'bim.Project',
         on_delete=models.CASCADE,

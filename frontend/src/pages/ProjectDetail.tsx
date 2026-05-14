@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import BimViewer from '../components/BimViewer';
@@ -18,6 +18,27 @@ interface Project {
   bim_models: BIMModel[];
 }
 
+interface KitSummary {
+  id: number;
+  codigo_kit: string;
+  nombre: string;
+}
+
+interface BudgetItem {
+  id: number;
+  cantidad: string;
+  actividad_detail: { cu_total: string; activity_kit: number | null };
+}
+
+interface KitBudgetEntry {
+  kit: KitSummary;
+  total: number;
+  itemCount: number;
+}
+
+const fmtBudget = (n: number) =>
+  n.toLocaleString('es-PA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 const ProjectDetail = () => {
   const { id } = useParams();
   const [project, setProject] = useState<Project | null>(null);
@@ -31,6 +52,12 @@ const ProjectDetail = () => {
     archivo: null as File | null
   });
   const [isUploading, setIsUploading] = useState(false);
+
+  // Budget summary state
+  const [activeKitIds,  setActiveKitIds]  = useState<Set<number> | null>(null);
+  const [masterKits,    setMasterKits]    = useState<KitSummary[]>([]);
+  const [budgetItems,   setBudgetItems]   = useState<BudgetItem[]>([]);
+  const [loadingBudget, setLoadingBudget] = useState(false);
 
   useEffect(() => {
     fetchProject();
@@ -54,6 +81,50 @@ const ProjectDetail = () => {
       setLoading(false);
     }
   };
+
+  // Fetch kits and budget whenever project id changes
+  useEffect(() => {
+    if (!id) return;
+    fetch('http://localhost:8000/api/activity-kits/')
+      .then(r => r.json())
+      .then(setMasterKits)
+      .catch(console.error);
+
+    setLoadingBudget(true);
+    fetch(`http://localhost:8000/api/budget-items/?proyecto=${id}`)
+      .then(r => r.json())
+      .then((data: BudgetItem[]) => { setBudgetItems(data); setLoadingBudget(false); })
+      .catch(() => setLoadingBudget(false));
+  }, [id]);
+
+  // Group budget items by kit
+  const budgetByKit = useMemo((): KitBudgetEntry[] => {
+    const kitIndex = new Map(masterKits.map(k => [k.id, k]));
+    const map = new Map<number, KitBudgetEntry>();
+    for (const item of budgetItems) {
+      const kitId = item.actividad_detail.activity_kit;
+      if (!kitId) continue;
+      const kit = kitIndex.get(kitId);
+      if (!kit) continue;
+      const cost = (parseFloat(item.cantidad) || 0) * (parseFloat(item.actividad_detail.cu_total) || 0);
+      if (!map.has(kitId)) map.set(kitId, { kit, total: 0, itemCount: 0 });
+      const e = map.get(kitId)!;
+      e.total += cost;
+      e.itemCount++;
+    }
+    return [...map.values()].sort((a, b) => (a.kit.codigo_kit || '').localeCompare(b.kit.codigo_kit || ''));
+  }, [budgetItems, masterKits]);
+
+  const filteredBudgetTotal = useMemo(() =>
+    (activeKitIds ? budgetByKit.filter(e => activeKitIds.has(e.kit.id)) : budgetByKit)
+      .reduce((s, e) => s + e.total, 0),
+    [budgetByKit, activeKitIds],
+  );
+
+  const allBudgetTotal = useMemo(() =>
+    budgetByKit.reduce((s, e) => s + e.total, 0),
+    [budgetByKit],
+  );
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -206,7 +277,12 @@ const ProjectDetail = () => {
         <div className="col-lg-9">
           <div className="card shadow-sm border-0 bg-dark rounded-3 overflow-hidden" style={{ height: '78vh', position: 'relative' }}>
             {selectedModel ? (
-              <BimViewer ifcUrl={selectedModel.archivo} projectId={id} onElementSelect={handleElementSelect} />
+              <BimViewer
+                ifcUrl={selectedModel.archivo}
+                projectId={id}
+                onElementSelect={handleElementSelect}
+                onActiveKitIdsChange={setActiveKitIds}
+              />
             ) : (
               <div className="h-100 d-flex flex-column align-items-center justify-content-center bg-light text-muted border border-dashed rounded-3">
                 <div className="text-center p-5">
@@ -221,6 +297,92 @@ const ProjectDetail = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Resumen de Presupuesto ── */}
+      <div className="row mt-3">
+        <div className="col-12">
+          <div className="card shadow-sm border-0">
+            <div className="card-header d-flex justify-content-between align-items-center bg-success text-white py-2 px-3">
+              <span className="fw-bold small">
+                <i className="bi bi-table me-2" />Resumen de Presupuesto
+              </span>
+              <div className="d-flex align-items-center gap-2">
+                {activeKitIds && activeKitIds.size > 0 && (
+                  <span className="badge bg-white text-success fw-bold">
+                    <i className="bi bi-funnel-fill me-1" />
+                    {activeKitIds.size} kit{activeKitIds.size !== 1 ? 's' : ''} filtrado{activeKitIds.size !== 1 ? 's' : ''} desde el visor
+                  </span>
+                )}
+                <Link to={`/projects/${id}/budget`} className="btn btn-sm btn-outline-light py-0 px-2" style={{ fontSize: '0.75rem' }}>
+                  Ver presupuesto completo →
+                </Link>
+              </div>
+            </div>
+            <div className="card-body p-0">
+              {loadingBudget ? (
+                <div className="text-center py-4">
+                  <span className="spinner-border spinner-border-sm text-success me-2" />
+                  <span className="text-muted small">Cargando presupuesto…</span>
+                </div>
+              ) : budgetByKit.length === 0 ? (
+                <div className="text-center py-4 text-muted small">
+                  <i className="bi bi-info-circle me-1" />
+                  No hay presupuesto definido.{' '}
+                  <Link to={`/projects/${id}/budget`}>Ir al presupuesto</Link> para sincronizarlo desde el IFC.
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="table table-sm table-hover mb-0">
+                    <thead className="table-light">
+                      <tr>
+                        <th className="ps-3" style={{ width: 110 }}>Código Kit</th>
+                        <th>Kit de Costos</th>
+                        <th className="text-center" style={{ width: 100 }}>Actividades</th>
+                        <th className="text-end pe-3" style={{ width: 150 }}>Costo Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {budgetByKit.map(({ kit, total, itemCount }) => {
+                        const isActive = !activeKitIds || activeKitIds.size === 0 || activeKitIds.has(kit.id);
+                        return (
+                          <tr key={kit.id} style={{ opacity: isActive ? 1 : 0.3, transition: 'opacity 0.2s' }}>
+                            <td className="ps-3 align-middle">
+                              <span className="badge bg-success font-monospace">{kit.codigo_kit || '—'}</span>
+                            </td>
+                            <td className="align-middle small">{kit.nombre}</td>
+                            <td className="text-center align-middle small text-muted">{itemCount}</td>
+                            <td className="text-end pe-3 align-middle fw-bold text-success font-monospace small">
+                              ${fmtBudget(total)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="table-success">
+                        <td colSpan={3} className="ps-3 fw-bold small">
+                          {activeKitIds && activeKitIds.size > 0 ? 'Subtotal filtrado' : 'Total General'}
+                        </td>
+                        <td className="text-end pe-3 fw-bold font-monospace small">
+                          ${fmtBudget(filteredBudgetTotal)}
+                        </td>
+                      </tr>
+                      {activeKitIds && activeKitIds.size > 0 && (
+                        <tr className="table-light">
+                          <td colSpan={3} className="ps-3 text-muted small">Total proyecto</td>
+                          <td className="text-end pe-3 text-muted small font-monospace">
+                            ${fmtBudget(allBudgetTotal)}
+                          </td>
+                        </tr>
+                      )}
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

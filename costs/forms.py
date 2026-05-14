@@ -20,8 +20,7 @@ class ActivityForm(forms.ModelForm):
 class ActivityKitForm(forms.ModelForm):
     class Meta:
         model = ActivityKit
-        fields = ['nombre', 'descripcion', 'activities']
+        fields = ['codigo_kit', 'nombre', 'descripcion']
         widgets = {
             'descripcion': forms.Textarea(attrs={'rows': 3}),
-            'activities': forms.CheckboxSelectMultiple(),
         }

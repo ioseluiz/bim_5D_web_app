@@ -18,29 +18,35 @@ class ActivitySerializer(serializers.ModelSerializer):
     def get_es_proyecto(self, obj):
         return obj.proyecto_id is not None
 
+class KitActivitySerializer(serializers.ModelSerializer):
+    division_name = serializers.ReadOnlyField(source='division.division_name')
+    division_code = serializers.ReadOnlyField(source='division.division_code')
+
+    class Meta:
+        model = Activity
+        fields = [
+            'id', 'codigo_actividad', 'descripcion', 'unidad',
+            'cu_total', 'material', 'mano_obra', 'equipo',
+            'division', 'division_name', 'division_code', 'base_actividad',
+        ]
+
 class ActivityKitSerializer(serializers.ModelSerializer):
-    activities = ActivitySerializer(many=True, read_only=True)
+    kit_activities = KitActivitySerializer(many=True, read_only=True)
 
     class Meta:
         model = ActivityKit
-        fields = '__all__'
+        fields = ['id', 'codigo_kit', 'nombre', 'descripcion', 'proyecto', 'kit_activities']
 
     def create(self, validated_data):
-        activity_ids = self.initial_data.get('activities', [])
-        kit = ActivityKit.objects.create(**validated_data)
-        if activity_ids:
-            kit.activities.set(activity_ids)
-        return kit
+        return ActivityKit.objects.create(**validated_data)
 
     def update(self, instance, validated_data):
+        instance.codigo_kit = validated_data.get('codigo_kit', instance.codigo_kit)
         instance.nombre = validated_data.get('nombre', instance.nombre)
         instance.descripcion = validated_data.get('descripcion', instance.descripcion)
         if 'proyecto' in validated_data:
             instance.proyecto = validated_data['proyecto']
         instance.save()
-        activity_ids = self.initial_data.get('activities')
-        if activity_ids is not None:
-            instance.activities.set(activity_ids)
         return instance
 
 class ProjectBudgetItemSerializer(serializers.ModelSerializer):

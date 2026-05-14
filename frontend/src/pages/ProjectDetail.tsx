@@ -272,6 +272,38 @@ const ProjectDetail = () => {
               )}
             </div>
           </div>
+
+          <div className="card shadow-sm border-0 mt-3">
+            <div className="card-header bg-success text-white py-2 px-3 d-flex align-items-center gap-2">
+              <i className="bi bi-cash-stack" />
+              <span className="fw-bold small flex-grow-1">
+                {activeKitIds && activeKitIds.size > 0 ? 'Subtotal Filtrado' : 'Total General'}
+              </span>
+              {activeKitIds && activeKitIds.size > 0 && (
+                <span className="badge bg-white text-success" style={{ fontSize: '0.65rem' }}>
+                  <i className="bi bi-funnel-fill me-1" />
+                  {activeKitIds.size} kit{activeKitIds.size !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+            <div className="card-body text-center py-3 px-2">
+              {loadingBudget ? (
+                <span className="spinner-border spinner-border-sm text-success" />
+              ) : (
+                <>
+                  <div className="fw-bold text-success font-monospace" style={{ fontSize: '1.35rem' }}>
+                    ${fmtBudget(filteredBudgetTotal)}
+                  </div>
+                  {activeKitIds && activeKitIds.size > 0 && (
+                    <div className="text-muted mt-2 pt-2 border-top" style={{ fontSize: '0.75rem' }}>
+                      <span className="d-block">Total proyecto</span>
+                      <span className="fw-bold font-monospace text-dark">${fmtBudget(allBudgetTotal)}</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="col-lg-9">

@@ -13,8 +13,16 @@ interface ActivityKit {
   codigo_kit: string;
   nombre: string;
   descripcion: string;
-  kit_activities: { id: number; codigo_actividad: string }[];
+  kit_activities: { id: number; codigo_actividad: string; descripcion: string }[];
   proyecto?: number | null;
+}
+
+interface IFCActivity {
+  id: number;
+  codigo_actividad: string;
+  descripcion: string;
+  kitId: number;
+  kitCode: string;
 }
 
 interface BudgetItemSummary {
@@ -83,7 +91,7 @@ const PROP_COLORS: Record<string, string> = {
 
 const KIT_COLOR  = '#10b981';
 const KIT_ICON   = '⬟';
-const KIT_LABEL  = 'Kit Actividades';
+const KIT_LABEL  = 'Actividades';
 
 // ─── Attribute helpers ─────────────────────────────────────────────────────────
 
@@ -267,23 +275,24 @@ function intersectModelIdMaps(a: OBC.ModelIdMap, b: OBC.ModelIdMap): OBC.ModelId
  * Computes the ModelIdMap to isolate based on active filters.
  * - Within each property: OR (union) of all selected values.
  * - Across properties: AND (intersection).
- * - kitDerivedCodes: when kits are selected but no explicit codigo_actividad
- *   values are chosen, automatically uses the kit's activity codes.
+ * - derivedCodes: codes derived from selected activities; intersected with manual
+ *   codigo_kit_actividad selection when both are active.
  * Returns null when no filters are active (show all).
  */
 function computeFilteredMap(
   multiIndex: MultiPropertyIndex,
   filterState: FilterState,
-  kitDerivedCodes: Set<string> | null = null,
+  derivedCodes: Set<string> | null = null,
 ): OBC.ModelIdMap | null {
-  // Effective state: apply kit-derived codes when no manual code selection
   const effective: FilterState = { ...filterState };
-  if (
-    kitDerivedCodes &&
-    kitDerivedCodes.size > 0 &&
-    (!effective['codigo_kit_actividad'] || effective['codigo_kit_actividad'].size === 0)
-  ) {
-    effective['codigo_kit_actividad'] = new Set(kitDerivedCodes);
+  if (derivedCodes && derivedCodes.size > 0) {
+    const manualCodes = effective['codigo_kit_actividad'];
+    if (!manualCodes || manualCodes.size === 0) {
+      effective['codigo_kit_actividad'] = new Set(derivedCodes);
+    } else {
+      // Both active: intersect so the model shows only elements matching both constraints
+      effective['codigo_kit_actividad'] = new Set([...manualCodes].filter(c => derivedCodes.has(c)));
+    }
   }
 
   const activeFilters = Object.entries(effective).filter(([, vals]) => vals.size > 0);
@@ -319,32 +328,32 @@ interface FilterPanelProps {
   multiIndex: MultiPropertyIndex;
   filterState: FilterState;
   scanning: boolean;
-  kits: ActivityKit[];
-  selectedKitIds: Set<number>;
-  kitDerivedCodes: Set<string> | null;
+  ifcActivities: IFCActivity[];
+  selectedActivityIds: Set<number>;
+  activityKitCodes: Set<string>;
   onToggle: (propName: string, value: string) => void;
   onClearProp: (propName: string) => void;
   onClearAll: () => void;
-  onToggleKit: (kitId: number) => void;
-  onClearKits: () => void;
+  onToggleActivity: (actId: number) => void;
+  onClearActivities: () => void;
   onClose: () => void;
 }
 
 const FilterPanel: React.FC<FilterPanelProps> = ({
   multiIndex, filterState, scanning,
-  kits, selectedKitIds, kitDerivedCodes,
+  ifcActivities, selectedActivityIds, activityKitCodes,
   onToggle, onClearProp, onClearAll,
-  onToggleKit, onClearKits, onClose,
+  onToggleActivity, onClearActivities, onClose,
 }) => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({
-    division: true, __kits__: true, codigo_kit_actividad: true, 'Master Format': true,
+    division: true, codigo_kit_actividad: true, __activities__: true, 'Master Format': true,
   }));
   const [search, setSearch] = useState<Record<string, string>>(() => ({
-    division: '', __kits__: '', codigo_kit_actividad: '', 'Master Format': '',
+    division: '', codigo_kit_actividad: '', __activities__: '', 'Master Format': '',
   }));
 
   const totalActive =
-    Object.values(filterState).reduce((a, s) => a + s.size, 0) + selectedKitIds.size;
+    Object.values(filterState).reduce((a, s) => a + s.size, 0) + selectedActivityIds.size;
   const totalElems = (map: OBC.ModelIdMap) =>
     Object.values(map).reduce((a, s) => a + (s as Set<number>).size, 0);
   const toggleExpand = (p: string) => setExpanded((e) => ({ ...e, [p]: !e[p] }));
@@ -359,12 +368,12 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     const isExpanded = expanded[propName] ?? true;
     const q = search[propName] ?? '';
 
-    // For codigo_actividad: restrict visible entries when kits are selected
+    // For codigo_kit_actividad: restrict visible entries when activities are selected
     const entries = propIdx
       ? [...propIdx.entries()]
           .filter(([v]) => {
-            if (propName === 'codigo_kit_actividad' && kitDerivedCodes && kitDerivedCodes.size > 0) {
-              if (!kitDerivedCodes.has(v)) return false;
+            if (propName === 'codigo_kit_actividad' && activityKitCodes.size > 0) {
+              if (!activityKitCodes.has(v)) return false;
             }
             return v.toLowerCase().includes(q.toLowerCase());
           })
@@ -388,7 +397,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           <div style={{ flex: 1 }} />
           {propIdx && propIdx.size > 0 && (
             <span style={fpSt.totalCount}>
-              {propName === 'codigo_kit_actividad' && kitDerivedCodes
+              {propName === 'codigo_kit_actividad' && activityKitCodes.size > 0
                 ? `${entries.length}/${propIdx.size}`
                 : propIdx.size}
             </span>
@@ -410,15 +419,14 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
               <div style={fpSt.emptySection}>No detectado en el modelo</div>
             ) : entries.length === 0 && !q ? (
               <div style={fpSt.emptySection}>
-                Sin actividades del kit seleccionado en el modelo
+                Sin códigos para las actividades seleccionadas
               </div>
             ) : (
               <>
-                {/* Show kit restriction notice */}
-                {propName === 'codigo_kit_actividad' && kitDerivedCodes && kitDerivedCodes.size > 0 && (
+                {propName === 'codigo_kit_actividad' && activityKitCodes.size > 0 && (
                   <div style={fpSt.kitNotice}>
                     <span style={{ color: KIT_COLOR }}>{KIT_ICON}</span>
-                    {' '}Filtrado por kit seleccionado
+                    {' '}Filtrado por actividades seleccionadas
                   </div>
                 )}
                 {(propIdx.size > 6 || (propName === 'codigo_kit_actividad' && entries.length > 6)) && (
@@ -478,21 +486,25 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     );
   };
 
-  /** Renders the Kit Actividades section (API-based, not IFC) */
-  const renderKitsSection = () => {
-    const isExpanded = expanded['__kits__'] ?? true;
-    const q = search['__kits__'] ?? '';
-    const filteredKits = kits.filter(k =>
-      k.nombre.toLowerCase().includes(q.toLowerCase()) ||
-      (k.codigo_kit?.toLowerCase() ?? '').includes(q.toLowerCase()),
-    );
-    const activeCount = selectedKitIds.size;
+  /** Renders the Actividades section — activities from kits present in the IFC model */
+  const renderActivitiesSection = () => {
+    const isExpanded = expanded['__activities__'] ?? true;
+    const q = search['__activities__'] ?? '';
+    const activeCount = selectedActivityIds.size;
+
+    // Restrict visible activities by codes selected in codigo_kit_actividad
+    const selectedCodes = filterState['codigo_kit_actividad'] ?? new Set<string>();
+    const visibleActivities = ifcActivities.filter(act => {
+      if (selectedCodes.size > 0 && !selectedCodes.has(act.kitCode)) return false;
+      return act.descripcion.toLowerCase().includes(q.toLowerCase()) ||
+             act.codigo_actividad.toLowerCase().includes(q.toLowerCase());
+    });
 
     return (
       <div style={fpSt.section}>
         <div
           style={{ ...fpSt.sectionHeader, borderLeftColor: KIT_COLOR }}
-          onClick={() => toggleExpand('__kits__')}
+          onClick={() => toggleExpand('__activities__')}
         >
           <span style={{ ...fpSt.sectionIcon, color: KIT_COLOR }}>{KIT_ICON}</span>
           <span style={{ ...fpSt.sectionLabel, color: KIT_COLOR }}>{KIT_LABEL}</span>
@@ -502,12 +514,18 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             </span>
           )}
           <div style={{ flex: 1 }} />
-          {kits.length > 0 && <span style={fpSt.totalCount}>{kits.length}</span>}
+          {ifcActivities.length > 0 && (
+            <span style={fpSt.totalCount}>
+              {selectedCodes.size > 0
+                ? `${visibleActivities.length}/${ifcActivities.length}`
+                : ifcActivities.length}
+            </span>
+          )}
           {activeCount > 0 && (
             <button
               style={fpSt.clearPropBtn}
-              onClick={(e) => { e.stopPropagation(); onClearKits(); }}
-              title="Limpiar kits"
+              onClick={(e) => { e.stopPropagation(); onClearActivities(); }}
+              title="Limpiar actividades"
             >✕</button>
           )}
           <span style={{ ...fpSt.chevron, transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
@@ -516,27 +534,34 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
         {isExpanded && (
           <div>
-            {kits.length === 0 ? (
-              <div style={fpSt.emptySection}>No hay kits para este proyecto</div>
+            {ifcActivities.length === 0 ? (
+              <div style={fpSt.emptySection}>No hay actividades en los kits del modelo</div>
+            ) : visibleActivities.length === 0 && !q ? (
+              <div style={fpSt.emptySection}>Sin actividades para los códigos seleccionados</div>
             ) : (
               <>
-                {kits.length > 6 && (
+                {selectedCodes.size > 0 && (
+                  <div style={fpSt.kitNotice}>
+                    <span style={{ color: '#38bdf8' }}>⬡</span>
+                    {' '}Filtrado por código kit seleccionado
+                  </div>
+                )}
+                {ifcActivities.length > 6 && (
                   <div style={fpSt.searchWrap}>
                     <input
                       style={fpSt.searchInput}
-                      placeholder="Buscar kit…"
+                      placeholder="Buscar actividad…"
                       value={q}
-                      onChange={(e) => setSearch((s) => ({ ...s, '__kits__': e.target.value }))}
+                      onChange={(e) => setSearch((s) => ({ ...s, '__activities__': e.target.value }))}
                     />
                   </div>
                 )}
                 <div style={fpSt.valueList}>
-                  {filteredKits.map(kit => {
-                    const isActive = selectedKitIds.has(kit.id);
-                    const isProject = kit.proyecto != null;
+                  {visibleActivities.map(act => {
+                    const isActive = selectedActivityIds.has(act.id);
                     return (
                       <label
-                        key={kit.id}
+                        key={act.id}
                         style={{
                           ...fpSt.valueRow,
                           ...(isActive ? { backgroundColor: `${KIT_COLOR}10`, borderLeftColor: KIT_COLOR } : {}),
@@ -545,7 +570,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
                         <input
                           type="checkbox"
                           checked={isActive}
-                          onChange={() => onToggleKit(kit.id)}
+                          onChange={() => onToggleActivity(act.id)}
                           style={{ display: 'none' }}
                         />
                         <span style={{
@@ -554,30 +579,21 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
                         }}>
                           {isActive ? '✓' : ''}
                         </span>
-                        <span
-                          style={{ ...fpSt.valueLabel, ...(isActive ? { color: '#e2e8f0' } : {}), whiteSpace: 'normal', lineHeight: 1.3 }}
-                          title={`${kit.codigo_kit ? kit.codigo_kit + ' — ' : ''}${kit.nombre}`}
-                        >
-                          {isProject && <span style={{ color: '#f59e0b', marginRight: 3 }}>★</span>}
-                          <span style={{ display: 'block', fontFamily: '"IBM Plex Mono",monospace', fontWeight: 700, fontSize: 10, color: isActive ? KIT_COLOR : '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {kit.codigo_kit || kit.nombre}
-                          </span>
-                          {kit.codigo_kit && (
-                            <span style={{ display: 'block', fontSize: 9, color: isActive ? '#94a3b8' : '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {kit.nombre}
-                            </span>
-                          )}
+                        <span style={{ ...fpSt.valueLabel, ...(isActive ? { color: '#e2e8f0' } : {}) }} title={`${act.codigo_actividad} — ${act.descripcion}`}>
+                          {act.descripcion || act.codigo_actividad}
                         </span>
                         <span style={{
                           ...fpSt.valueBadge,
-                          ...(isActive ? { backgroundColor: `${KIT_COLOR}28`, color: KIT_COLOR } : {}),
+                          fontSize: 8,
+                          backgroundColor: isActive ? `${KIT_COLOR}28` : 'rgba(56,189,248,0.15)',
+                          color: isActive ? KIT_COLOR : '#38bdf8',
                         }}>
-                          {kit.kit_activities.length}
+                          {act.kitCode}
                         </span>
                       </label>
                     );
                   })}
-                  {filteredKits.length === 0 && q && (
+                  {visibleActivities.length === 0 && q && (
                     <div style={fpSt.noResults}>Sin resultados para "{q}"</div>
                   )}
                 </div>
@@ -616,7 +632,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
       </div>
 
-      {/* Body — orden: División → Kit → Código Actividad → Master Format */}
+      {/* Body — orden: Código Kit Actividad → Actividades → División → Master Format */}
       <div style={fpSt.body}>
         {scanning && (
           <div style={fpSt.scanningWrap}>
@@ -626,9 +642,9 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         )}
         {!scanning && (
           <>
-            {renderPropSection('division')}
-            {renderKitsSection()}
             {renderPropSection('codigo_kit_actividad')}
+            {renderActivitiesSection()}
+            {renderPropSection('division')}
             {renderPropSection('Master Format')}
           </>
         )}
@@ -907,10 +923,9 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
   const [scanning,      setScanning]      = useState(false);
   const [filterState,   setFilterState]   = useState<FilterState>(EMPTY_FILTER_STATE);
 
-  // Kit filter state
-  const [kits,            setKits]            = useState<ActivityKit[]>([]);
-  const [selectedKitIds,  setSelectedKitIds]  = useState<Set<number>>(new Set());
-  const [kitDerivedCodes, setKitDerivedCodes] = useState<Set<string> | null>(null);
+  // Kit + activity filter state
+  const [kits,               setKits]               = useState<ActivityKit[]>([]);
+  const [selectedActivityIds, setSelectedActivityIds] = useState<Set<number>>(new Set());
 
 
   const onElementSelectRef = useRef(onElementSelect);
@@ -936,11 +951,39 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     load();
   }, [projectId]);
 
-  // ── Apply filter whenever filterState, multiIndex, or kitDerivedCodes changes
+  // ── Derived values from kits + IFC scan ─────────────────────────────────
+  const ifcKitCodes = useMemo(() => {
+    const idx = multiIndex.get('codigo_kit_actividad');
+    return idx ? new Set(idx.keys()) : new Set<string>();
+  }, [multiIndex]);
+
+  const ifcKits = useMemo(
+    () => kits.filter(k => k.codigo_kit && ifcKitCodes.has(k.codigo_kit)),
+    [kits, ifcKitCodes],
+  );
+
+  const ifcActivities = useMemo((): IFCActivity[] => {
+    const acts: IFCActivity[] = [];
+    for (const kit of ifcKits) {
+      for (const act of kit.kit_activities) {
+        acts.push({ id: act.id, codigo_actividad: act.codigo_actividad, descripcion: act.descripcion, kitId: kit.id, kitCode: kit.codigo_kit });
+      }
+    }
+    return acts.sort((a, b) => a.descripcion.localeCompare(b.descripcion));
+  }, [ifcKits]);
+
+  const activityKitCodes = useMemo((): Set<string> => {
+    if (selectedActivityIds.size === 0) return new Set();
+    const codes = new Set<string>();
+    ifcActivities.forEach(act => { if (selectedActivityIds.has(act.id)) codes.add(act.kitCode); });
+    return codes;
+  }, [selectedActivityIds, ifcActivities]);
+
+  // ── Apply filter whenever filterState, multiIndex, or activityKitCodes changes
   useEffect(() => {
     const hider = hiderRef.current;
     if (!hider) return;
-    const filtered = computeFilteredMap(multiIndex, filterState, kitDerivedCodes);
+    const filtered = computeFilteredMap(multiIndex, filterState, activityKitCodes.size > 0 ? activityKitCodes : null);
     (async () => {
       if (filtered === null) {
         await hider.set(true);
@@ -948,7 +991,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
         await hider.isolate(filtered);
       }
     })();
-  }, [filterState, multiIndex, kitDerivedCodes]);
+  }, [filterState, multiIndex, activityKitCodes]);
 
   // ── Filter handlers ──────────────────────────────────────────────────────
   const handleToggle = useCallback((propName: string, value: string) => {
@@ -967,43 +1010,43 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
 
   const handleClearAll = useCallback(() => {
     setFilterState(EMPTY_FILTER_STATE());
-    setSelectedKitIds(new Set());
-    setKitDerivedCodes(null);
+    setSelectedActivityIds(new Set());
   }, []);
 
-  // ── Kit filter handlers ──────────────────────────────────────────────────
-  const handleToggleKit = (kitId: number) => {
-    setSelectedKitIds(prev => {
+  // ── Activity filter handlers ─────────────────────────────────────────────
+  const handleToggleActivity = useCallback((actId: number) => {
+    setSelectedActivityIds(prev => {
       const next = new Set(prev);
-      if (next.has(kitId)) next.delete(kitId); else next.add(kitId);
-      // Derive kit codes — these are the values stamped as codigo_kit_actividad in the IFC model
-      const codes = new Set<string>();
-      kits.filter(k => next.has(k.id) && k.codigo_kit).forEach(k => codes.add(k.codigo_kit));
-      setKitDerivedCodes(next.size > 0 ? codes : null);
+      if (next.has(actId)) next.delete(actId); else next.add(actId);
       return next;
     });
-    // Clear manual selection so kit drives the filter
-    setFilterState(prev => ({ ...prev, 'codigo_kit_actividad': new Set<string>() }));
-  };
+  }, []);
 
-  const handleClearKits = () => {
-    setSelectedKitIds(new Set());
-    setKitDerivedCodes(null);
-    setFilterState(prev => ({ ...prev, 'codigo_kit_actividad': new Set<string>() }));
-  };
+  const handleClearActivities = useCallback(() => {
+    setSelectedActivityIds(new Set());
+  }, []);
 
   // ── Budget filter computed ────────────────────────────────────────────────
 
   const activeBudgetKitIds = useMemo((): Set<number> | null => {
-    if (selectedKitIds.size > 0) return selectedKitIds;
     const selectedCodes = filterState['codigo_kit_actividad'];
-    if (selectedCodes && selectedCodes.size > 0) {
-      const ids = new Set<number>();
-      kits.forEach(k => { if (k.codigo_kit && selectedCodes.has(k.codigo_kit)) ids.add(k.id); });
-      return ids;
+    const hasManualCodes = selectedCodes && selectedCodes.size > 0;
+    const hasActivityCodes = activityKitCodes.size > 0;
+
+    let effectiveCodes: Set<string> | null = null;
+    if (hasManualCodes && hasActivityCodes) {
+      effectiveCodes = new Set([...selectedCodes].filter(c => activityKitCodes.has(c)));
+    } else if (hasManualCodes) {
+      effectiveCodes = selectedCodes;
+    } else if (hasActivityCodes) {
+      effectiveCodes = activityKitCodes;
     }
-    return null;
-  }, [selectedKitIds, filterState, kits]);
+
+    if (!effectiveCodes || effectiveCodes.size === 0) return null;
+    const ids = new Set<number>();
+    kits.forEach(k => { if (k.codigo_kit && effectiveCodes!.has(k.codigo_kit)) ids.add(k.id); });
+    return ids;
+  }, [filterState, activityKitCodes, kits]);
 
   useEffect(() => {
     onActiveKitIdsChange?.(activeBudgetKitIds);
@@ -1089,12 +1132,12 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
         </bim-panel-section>
       </bim-panel>
     `);
-    panel.style.cssText = 'position:absolute;top:50px;right:10px;width:280px;z-index:1002;display:none';
+    panel.style.cssText = 'position:absolute;top:50px;left:10px;width:280px;z-index:1002;display:none';
 
     const toggleButton = document.createElement('button');
     toggleButton.innerHTML = '⚙️';
     Object.assign(toggleButton.style, {
-      position:'absolute', top:'10px', right:'10px', zIndex:'1003',
+      position:'absolute', top:'10px', left:'10px', zIndex:'1003',
       padding:'8px', borderRadius:'4px', border:'none',
       backgroundColor:'rgba(255,255,255,0.7)', cursor:'pointer',
     });
@@ -1183,13 +1226,13 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     ...IFC_PROPS
       .filter((p) => (filterState[p]?.size ?? 0) > 0)
       .map((p) => `${PROP_LABELS[p]} (${filterState[p].size})`),
-    ...(selectedKitIds.size > 0 ? [`${KIT_LABEL} (${selectedKitIds.size})`] : []),
+    ...(selectedActivityIds.size > 0 ? [`${KIT_LABEL} (${selectedActivityIds.size})`] : []),
   ];
 
-  const filteredMap = computeFilteredMap(multiIndex, filterState, kitDerivedCodes);
+  const filteredMap = computeFilteredMap(multiIndex, filterState, activityKitCodes.size > 0 ? activityKitCodes : null);
 
   const totalActiveCount =
-    IFC_PROPS.reduce((a, p) => a + (filterState[p]?.size ?? 0), 0) + selectedKitIds.size;
+    IFC_PROPS.reduce((a, p) => a + (filterState[p]?.size ?? 0), 0) + selectedActivityIds.size;
 
   const statusText = activeFilterParts.length > 0
     ? `Filtrando: ${activeFilterParts.join(' · ')} → ${filteredMap ? countModelIdMap(filteredMap) : 0} elementos`
@@ -1207,14 +1250,14 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
           multiIndex={multiIndex}
           filterState={filterState}
           scanning={scanning}
-          kits={kits}
-          selectedKitIds={selectedKitIds}
-          kitDerivedCodes={kitDerivedCodes}
+          ifcActivities={ifcActivities}
+          selectedActivityIds={selectedActivityIds}
+          activityKitCodes={activityKitCodes}
           onToggle={handleToggle}
           onClearProp={handleClearProp}
           onClearAll={handleClearAll}
-          onToggleKit={handleToggleKit}
-          onClearKits={handleClearKits}
+          onToggleActivity={handleToggleActivity}
+          onClearActivities={handleClearActivities}
           onClose={() => setFilterPanelVis(false)}
         />
       ) : (

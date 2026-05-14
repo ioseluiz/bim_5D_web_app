@@ -904,6 +904,64 @@ const bdgSt: Record<string, React.CSSProperties> = {
   footerTotal: { fontSize:15, fontWeight:700, color:'#10b981', fontFamily:'"IBM Plex Mono",monospace' },
 };
 
+// ─── Measure Panel ─────────────────────────────────────────────────────────────
+
+interface MeasurePanelProps {
+  activeTool: 'length' | 'area' | 'volume' | null;
+  onToggle: (tool: 'length' | 'area' | 'volume') => void;
+  onClear: () => void;
+  onClose: () => void;
+}
+
+const MEASURE_TOOLS = [
+  { id: 'length' as const, icon: '📏', label: 'Longitud',  color: '#f59e0b', hint: 'Doble clic: punto inicial → punto final · Enter para finalizar' },
+  { id: 'area'   as const, icon: '⬜', label: 'Área',      color: '#38bdf8', hint: 'Doble clic: vértices del polígono · Enter para cerrar' },
+  { id: 'volume' as const, icon: '⬛', label: 'Volumen',   color: '#a78bfa', hint: 'Doble clic: seleccionar elemento · Enter para confirmar · Esc para cancelar' },
+];
+
+const MeasurePanel: React.FC<MeasurePanelProps> = ({ activeTool, onToggle, onClear, onClose }) => (
+  <div style={mSt.container}>
+    <div style={mSt.header}>
+      <span style={mSt.headerTitle}>⬢ Medición</span>
+      <button style={mSt.closeBtn} onClick={onClose} title="Minimizar">—</button>
+    </div>
+    {MEASURE_TOOLS.map(({ id, icon, label, color, hint }) => {
+      const isActive = activeTool === id;
+      return (
+        <div key={id}>
+          <button
+            style={{ ...mSt.toolBtn, ...(isActive ? { backgroundColor: `${color}18`, borderColor: `${color}50` } : {}) }}
+            onClick={() => onToggle(id)}
+            title={hint}
+          >
+            <span style={{ fontSize: 14 }}>{icon}</span>
+            <span style={{ ...mSt.toolLabel, ...(isActive ? { color, fontWeight: 700 } : {}) }}>{label}</span>
+            {isActive && <span style={{ ...mSt.activeDot, backgroundColor: color }} />}
+          </button>
+          {isActive && <div style={{ ...mSt.hint, color }}>{hint}</div>}
+        </div>
+      );
+    })}
+    {activeTool && (
+      <button style={mSt.clearBtn} onClick={onClear} title="Limpiar todas las mediciones">
+        ✕ Limpiar mediciones
+      </button>
+    )}
+  </div>
+);
+
+const mSt: Record<string, React.CSSProperties> = {
+  container: { ...BASE, position: 'absolute', top: '50%', left: '16px', transform: 'translateY(-50%)', width: 195, zIndex: 1001 },
+  header:    { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px 9px', borderBottom: '1px solid rgba(255,255,255,0.07)', backgroundColor: 'rgba(255,255,255,0.03)', flexShrink: 0 },
+  headerTitle: { fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#94a3b8' },
+  closeBtn:  { background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 16, padding: '2px 5px', borderRadius: 4, lineHeight: 1 },
+  toolBtn:   { display: 'flex', alignItems: 'center', gap: 8, width: 'calc(100% - 12px)', background: 'none', border: '1px solid transparent', borderRadius: 6, padding: '7px 10px', cursor: 'pointer', fontFamily: '"IBM Plex Mono",monospace', margin: '4px 6px 0', transition: 'background 0.15s, border-color 0.15s' },
+  toolLabel: { flex: 1, fontSize: 11, color: '#94a3b8', transition: 'color 0.15s', textAlign: 'left' as const },
+  activeDot: { width: 6, height: 6, borderRadius: '50%', flexShrink: 0 },
+  hint:      { fontSize: 9, padding: '2px 12px 5px 28px', lineHeight: 1.5, fontFamily: '"IBM Plex Mono",monospace', opacity: 0.85 },
+  clearBtn:  { display: 'block', width: 'calc(100% - 12px)', margin: '6px 6px 8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', borderRadius: 6, padding: '5px 8px', cursor: 'pointer', fontSize: 10, fontFamily: '"IBM Plex Mono",monospace' },
+};
+
 // ─── Main BimViewer ────────────────────────────────────────────────────────────
 
 const EMPTY_FILTER_STATE = (): FilterState =>
@@ -927,6 +985,14 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
   const [kits,               setKits]               = useState<ActivityKit[]>([]);
   const [selectedActivityIds, setSelectedActivityIds] = useState<Set<number>>(new Set());
 
+  // Measurement tools state
+  const [activeMeasureTool, setActiveMeasureTool] = useState<'length' | 'area' | 'volume' | null>(null);
+  const [measurePanelVis,   setMeasurePanelVis]   = useState(true);
+  const activeMeasureToolRef = useRef<'length' | 'area' | 'volume' | null>(null);
+  const lengthMeasurerRef    = useRef<OBF.LengthMeasurement | null>(null);
+  const areaMeasurerRef      = useRef<OBF.AreaMeasurement   | null>(null);
+  const volumeMeasurerRef    = useRef<OBF.VolumeMeasurement | null>(null);
+  const highlighterRef       = useRef<OBF.Highlighter | null>(null);
 
   const onElementSelectRef = useRef(onElementSelect);
   useEffect(() => { onElementSelectRef.current = onElementSelect; }, [onElementSelect]);
@@ -985,10 +1051,14 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     if (!hider) return;
     const filtered = computeFilteredMap(multiIndex, filterState, activityKitCodes.size > 0 ? activityKitCodes : null);
     (async () => {
-      if (filtered === null) {
-        await hider.set(true);
-      } else {
-        await hider.isolate(filtered);
+      try {
+        if (filtered === null) {
+          await hider.set(true);
+        } else {
+          await hider.isolate(filtered);
+        }
+      } catch {
+        // FragmentsManager may not be initialized yet (model still loading)
       }
     })();
   }, [filterState, multiIndex, activityKitCodes]);
@@ -1024,6 +1094,31 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
 
   const handleClearActivities = useCallback(() => {
     setSelectedActivityIds(new Set());
+  }, []);
+
+  // ── Measurement tool handlers ────────────────────────────────────────────
+  const handleToggleMeasureTool = useCallback((tool: 'length' | 'area' | 'volume') => {
+    const next = activeMeasureToolRef.current === tool ? null : tool;
+    activeMeasureToolRef.current = next;
+    setActiveMeasureTool(next);
+    if (lengthMeasurerRef.current) lengthMeasurerRef.current.enabled = false;
+    if (areaMeasurerRef.current)   areaMeasurerRef.current.enabled   = false;
+    if (volumeMeasurerRef.current) volumeMeasurerRef.current.enabled = false;
+    if (next === 'length' && lengthMeasurerRef.current) lengthMeasurerRef.current.enabled = true;
+    if (next === 'area'   && areaMeasurerRef.current)   areaMeasurerRef.current.enabled   = true;
+    if (next === 'volume' && volumeMeasurerRef.current) volumeMeasurerRef.current.enabled = true;
+    // Disable element selection while a measurement tool is active so clicks
+    // aren't stolen by the highlighter. Re-enable and clear highlight on exit.
+    if (highlighterRef.current) {
+      highlighterRef.current.enabled = !next;
+      if (!next) highlighterRef.current.clear();
+    }
+  }, []);
+
+  const handleClearMeasurements = useCallback(() => {
+    lengthMeasurerRef.current?.list.clear();
+    areaMeasurerRef.current?.list.clear();
+    volumeMeasurerRef.current?.list.clear();
   }, []);
 
   // ── Budget filter computed ────────────────────────────────────────────────
@@ -1062,15 +1157,16 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     componentsRef.current = components;
 
     const worlds = components.get(OBC.Worlds);
-    const world  = worlds.create<OBC.SimpleScene, OBC.SimpleCamera, OBC.SimpleRenderer>();
+    const world  = worlds.create<OBC.SimpleScene, OBC.SimpleCamera, OBF.PostproductionRenderer>();
     world.scene    = new OBC.SimpleScene(components);
-    world.renderer = new OBC.SimpleRenderer(components, container);
+    world.renderer = new OBF.PostproductionRenderer(components, container);
     world.camera   = new OBC.SimpleCamera(components);
     world.scene.setup();
     components.init();
 
     world.scene.three.background = new THREE.Color(0xcccccc);
-    if (world.renderer instanceof OBC.SimpleRenderer) world.renderer.showLogo = false;
+    // PostproductionRenderer provides the CSS2D layer needed for measurement labels.
+    // Postproduction effects are disabled by default — no action needed.
 
     const fragments = components.get(OBC.FragmentsManager);
     const ifcLoader = components.get(OBC.IfcLoader);
@@ -1089,8 +1185,10 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
         opacity: 1, transparent: false, renderedFaces: 0,
       },
     });
+    highlighterRef.current = highlighter;
 
     highlighter.events.select.onHighlight.add(async (modelIdMap) => {
+      if (activeMeasureToolRef.current) return;
       setPropPanelVis(true);
       setLoadingProps(true);
       setSelectedProperties(null);
@@ -1148,11 +1246,78 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     };
     if (container.parentElement) container.parentElement.append(panel, toggleButton);
 
+    // Double-click dispatches to the active tool.
+    // Volume: create() adds the picked element to a preview, then endCreation() finalizes.
+    // Length/Area: create() places a point; Enter finalizes.
+    const handleMeasureDblClick = () => {
+      const tool = activeMeasureToolRef.current;
+      if (tool === 'length') {
+        lengthMeasurerRef.current?.create().catch(e => console.warn('[Measure length]', e));
+      } else if (tool === 'area') {
+        areaMeasurerRef.current?.create().catch(e => console.warn('[Measure area]', e));
+      } else if (tool === 'volume') {
+        volumeMeasurerRef.current?.create().catch(e => console.warn('[Measure volume]', e));
+      }
+    };
+    container.addEventListener('dblclick', handleMeasureDblClick);
+
+    // Delete = remove measurement under cursor · Enter = finalize · Escape = cancel in-progress
+    const handleMeasureKey = (e: KeyboardEvent) => {
+      const tool = activeMeasureToolRef.current;
+      if (!tool) return;
+      if (e.code === 'Delete' || e.code === 'Backspace') {
+        if (tool === 'length') lengthMeasurerRef.current?.delete();
+        else if (tool === 'area')   areaMeasurerRef.current?.delete();
+        else if (tool === 'volume') volumeMeasurerRef.current?.delete().catch(e => console.warn('[Measure volume delete]', e));
+      }
+      if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+        if (tool === 'length') lengthMeasurerRef.current?.endCreation();
+        else if (tool === 'area') areaMeasurerRef.current?.endCreation();
+        else if (tool === 'volume') volumeMeasurerRef.current?.endCreation();
+      }
+      if (e.key === 'Escape') {
+        if (tool === 'length') {
+          lengthMeasurerRef.current?.cancelCreation();
+          lengthMeasurerRef.current?.list.clear();
+        } else if (tool === 'area') {
+          areaMeasurerRef.current?.cancelCreation();
+          areaMeasurerRef.current?.list.clear();
+        } else if (tool === 'volume') {
+          volumeMeasurerRef.current?.cancelCreation();
+          volumeMeasurerRef.current?.list.clear();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleMeasureKey);
+
     // ── Load IFC ─────────────────────────────────────────────────────────
     const loadModel = async () => {
       try {
         const workerUrl = await OBC.FragmentsManager.getWorker();
         fragments.init(workerUrl);
+
+        // Measurement tools: enabled setter requires FragmentsManager.init() first.
+        // snappings activates the SnapResolver so the cursor snaps to vertices/edges
+        // and the snap indicator (red square) appears near model boundaries.
+        const lengthMeasurer = components.get(OBF.LengthMeasurement);
+        lengthMeasurer.world = world;
+        lengthMeasurer.color = new THREE.Color('#494cb6');
+        lengthMeasurer.snappings = [FRAGS.SnappingClass.POINT];
+        lengthMeasurer.enabled = false;
+        lengthMeasurerRef.current = lengthMeasurer;
+
+        const areaMeasurer = components.get(OBF.AreaMeasurement);
+        areaMeasurer.world = world;
+        areaMeasurer.color = new THREE.Color('#494cb6');
+        areaMeasurer.snappings = [FRAGS.SnappingClass.POINT];
+        areaMeasurer.enabled = false;
+        areaMeasurerRef.current = areaMeasurer;
+
+        const volumeMeasurer = components.get(OBF.VolumeMeasurement);
+        volumeMeasurer.world = world;
+        volumeMeasurer.color = new THREE.Color('#494cb6');
+        volumeMeasurer.enabled = false;
+        volumeMeasurerRef.current = volumeMeasurer;
 
         world.camera.controls.addEventListener('update', () => fragments.core.update());
         world.onCameraChanged.add((camera) => {
@@ -1214,6 +1379,12 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     loadModel();
 
     return () => {
+      container.removeEventListener('dblclick', handleMeasureDblClick);
+      window.removeEventListener('keydown', handleMeasureKey);
+      lengthMeasurerRef.current = null;
+      areaMeasurerRef.current   = null;
+      volumeMeasurerRef.current = null;
+      highlighterRef.current    = null;
       panel.remove();
       toggleButton.remove();
       componentsRef.current?.dispose();
@@ -1243,6 +1414,34 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       <div ref={containerRef} className="w-100 h-100" style={{ backgroundColor:'#cccccc' }} />
+
+      {/* Measure panel */}
+      {measurePanelVis ? (
+        <MeasurePanel
+          activeTool={activeMeasureTool}
+          onToggle={handleToggleMeasureTool}
+          onClear={handleClearMeasurements}
+          onClose={() => { if (activeMeasureTool) handleToggleMeasureTool(activeMeasureTool); setMeasurePanelVis(false); }}
+        />
+      ) : (
+        <button
+          onClick={() => setMeasurePanelVis(true)}
+          style={{
+            position: 'absolute', top: '50%', left: '16px', transform: 'translateY(-50%)', zIndex: 1001,
+            background: 'rgba(15,17,23,0.85)', border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '8px', color: '#94a3b8', cursor: 'pointer',
+            padding: '8px 12px', fontSize: 13, backdropFilter: 'blur(8px)',
+            fontFamily: '"IBM Plex Mono",monospace',
+          }}
+        >
+          ⬢ Medición
+          {activeMeasureTool && (
+            <span style={{ marginLeft: 6, backgroundColor: '#f59e0b', color: '#0f1117', borderRadius: 8, fontSize: 10, padding: '1px 6px', fontWeight: 700 }}>
+              1
+            </span>
+          )}
+        </button>
+      )}
 
       {/* Filter panel */}
       {filterPanelVis ? (

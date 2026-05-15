@@ -6,6 +6,8 @@ import ProjectKits from './pages/ProjectKits';
 import ProjectBudget from './pages/ProjectBudget';
 import ActivityList from './pages/ActivityList';
 import ActivityKitList from './pages/ActivityKitList';
+import ScheduleKitList from './pages/ScheduleKitList';
+import ProjectSchedule from './pages/ProjectSchedule';
 
 function App() {
   return (
@@ -19,8 +21,10 @@ function App() {
             <Route path="/projects/:id" element={<ProjectDetail />} />
             <Route path="/projects/:id/kits" element={<ProjectKits />} />
             <Route path="/projects/:id/budget" element={<ProjectBudget />} />
+            <Route path="/projects/:id/schedule" element={<ProjectSchedule />} />
             <Route path="/activities" element={<ActivityList />} />
             <Route path="/kits" element={<ActivityKitList />} />
+            <Route path="/schedule-kits" element={<ScheduleKitList />} />
             <Route path="*" element={<div className="container mt-5"><h2>404 - No Encontrado</h2></div>} />
           </Routes>
         </main>

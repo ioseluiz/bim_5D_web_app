@@ -69,23 +69,26 @@ type FilterState = Record<string, Set<string>>;
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 /** Propiedades escaneadas del IFC — el orden aquí define el scan, no la UI */
-const IFC_PROPS = ['division', 'codigo_kit_actividad', 'Master Format'] as const;
+const IFC_PROPS = ['division', 'codigo_kit_actividad', 'codigo_cronograma', 'Master Format'] as const;
 
 const PROP_LABELS: Record<string, string> = {
   'Master Format':        'Master Format',
-  'codigo_kit_actividad': 'Código Kit Actividad',
+  'codigo_kit_actividad': 'Código Kit Costo',
+  'codigo_cronograma':    'Código Kit Cronograma',
   'division':             'División',
 };
 
 const PROP_ICONS: Record<string, string> = {
   'Master Format':        '◈',
   'codigo_kit_actividad': '⬡',
+  'codigo_cronograma':    '◷',
   'division':             '◉',
 };
 
 const PROP_COLORS: Record<string, string> = {
   'Master Format':        '#f59e0b',
   'codigo_kit_actividad': '#38bdf8',
+  'codigo_cronograma':    '#22c55e',
   'division':             '#a78bfa',
 };
 
@@ -346,10 +349,10 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
   onToggleActivity, onClearActivities, onClose,
 }) => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({
-    division: true, codigo_kit_actividad: true, __activities__: true, 'Master Format': true,
+    division: true, codigo_kit_actividad: true, codigo_cronograma: true, __activities__: true, 'Master Format': true,
   }));
   const [search, setSearch] = useState<Record<string, string>>(() => ({
-    division: '', codigo_kit_actividad: '', __activities__: '', 'Master Format': '',
+    division: '', codigo_kit_actividad: '', codigo_cronograma: '', __activities__: '', 'Master Format': '',
   }));
 
   const totalActive =
@@ -632,7 +635,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
       </div>
 
-      {/* Body — orden: Código Kit Actividad → Actividades → División → Master Format */}
+      {/* Body — orden: Código Kit Costo → Actividades → Código Kit Cronograma → División → Master Format */}
       <div style={fpSt.body}>
         {scanning && (
           <div style={fpSt.scanningWrap}>
@@ -644,6 +647,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           <>
             {renderPropSection('codigo_kit_actividad')}
             {renderActivitiesSection()}
+            {renderPropSection('codigo_cronograma')}
             {renderPropSection('division')}
             {renderPropSection('Master Format')}
           </>
@@ -1172,6 +1176,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     const ifcLoader = components.get(OBC.IfcLoader);
     const grids     = components.get(OBC.Grids);
     const grid      = grids.create(world);
+    grid.visible    = false;
     const hider     = components.get(OBC.Hider);
     hiderRef.current = hider;
 
@@ -1224,7 +1229,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
               world.scene.config.directionalIntensity = target.value;
             }}">
           </bim-number-input>
-          <bim-checkbox label="Rejilla Visible" checked
+          <bim-checkbox label="Rejilla Visible"
             @change="${({ target }: { target: any }) => { grid.visible = target.value; }}">
           </bim-checkbox>
         </bim-panel-section>
@@ -1365,6 +1370,13 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
 
           multiIndexRef.current = idx;
           setMultiIndex(new Map(idx));
+
+          // Persist codigo_cronograma codes so ProjectSchedule can filter without re-scanning
+          if (projectId) {
+            const schedIdx = idx.get('codigo_cronograma');
+            const codes = schedIdx ? [...schedIdx.keys()] : [];
+            sessionStorage.setItem(`ifc_cronograma_codes_${projectId}`, JSON.stringify(codes));
+          }
         } catch (scanErr) {
           console.error('[BIM Scan] Error durante el escaneo:', scanErr);
         } finally {

@@ -21,6 +21,9 @@ const Navbar = () => {
             <li className="nav-item">
               <NavLink className="nav-link" to="/kits">Kits de Costos</NavLink>
             </li>
+            <li className="nav-item">
+              <NavLink className="nav-link" to="/schedule-kits">Kits de Cronograma</NavLink>
+            </li>
           </ul>
         </div>
       </div>

@@ -197,6 +197,9 @@ const ProjectDetail = () => {
             <Link to={`/projects/${id}/budget`} className="btn btn-success btn-sm fw-bold shadow-sm">
               <i className="bi bi-table me-2"></i>Presupuesto
             </Link>
+            <Link to={`/projects/${id}/schedule`} className="btn btn-success btn-sm fw-bold shadow-sm">
+              <i className="bi bi-calendar3 me-2"></i>Cronograma
+            </Link>
             <button
               className="btn btn-primary btn-sm px-3 shadow-sm"
               onClick={() => setShowUploadModal(true)}

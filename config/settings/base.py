@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'accounts',
     'costs',
     'bim',
+    'schedule',
 ]
 
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"

@@ -1069,7 +1069,7 @@ interface TimelinePanelProps {
   dateRange: { start: string; end: string } | null;
   currentDate: string;
   playing: boolean;
-  speed: number;
+  duration: number;
   kits: ScheduleKit[];
   multiIndex: MultiPropertyIndex;
   doneColorMode: 'kit' | 'original' | 'uniform';
@@ -2011,7 +2011,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     : 'Clic en elemento para propiedades · Selecciona parámetros para filtrar';
 
   return (
-    <div className="w-100 h-100 position-relative" style={{ minHeight:'600px', overflow:'hidden' }}>
+    <div className="w-100 h-100 position-relative" style={{ overflow:'hidden' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       <div ref={containerRef} className="w-100 h-100" style={{ backgroundColor:'#cccccc' }} />
@@ -2139,25 +2139,34 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
             setTimelinePlaying(false);
           }}
         />
-      ) : timelineDateRange ? (
+      ) : (
         <button
           onClick={() => {
             setTimelinePanelVis(true);
-            setTimelineActive(true);
-            if (!timelineDateStr && timelineDateRange) setTimelineDateStr(addDays(timelineDateRange.start, -1));
+            if (timelineDateRange) {
+              setTimelineActive(true);
+              if (!timelineDateStr) setTimelineDateStr(addDays(timelineDateRange.start, -1));
+            }
           }}
           style={{
             position: 'absolute', bottom: '44px', left: '50%', transform: 'translateX(-50%)',
             zIndex: 1000, background: 'rgba(15,17,23,0.85)',
-            border: '1px solid rgba(245,158,11,0.3)', borderRadius: '8px',
-            color: '#f59e0b', cursor: 'pointer', padding: '6px 14px', fontSize: 12,
+            border: `1px solid ${timelineDateRange ? 'rgba(245,158,11,0.3)' : 'rgba(100,116,139,0.2)'}`,
+            borderRadius: '8px',
+            color: timelineDateRange ? '#f59e0b' : '#64748b',
+            cursor: 'pointer', padding: '6px 14px', fontSize: 12,
             backdropFilter: 'blur(8px)', fontFamily: '"IBM Plex Mono",monospace',
             letterSpacing: '0.06em',
           }}
         >
           ◷ Timeliner
+          {!timelineDateRange && (
+            <span style={{ marginLeft: 6, fontSize: 9, opacity: 0.6 }}>
+              {scanning ? 'escaneando…' : 'sin fechas'}
+            </span>
+          )}
         </button>
-      ) : null}
+      )}
 
       {/* Status bar */}
       <div style={{

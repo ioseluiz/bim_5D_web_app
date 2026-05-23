@@ -5,6 +5,7 @@ import * as FRAGS from '@thatopen/fragments';
 import * as WEBIFC from 'web-ifc';
 import * as BUI from '@thatopen/ui';
 import * as THREE from 'three';
+import api from '../api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1103,6 +1104,13 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({
   onDoneColorModeChange, onDoneUniformColorChange,
   onStartRecording, onStopRecording, onClose,
 }) => {
+  const [collapsed, setCollapsed] = React.useState(false);
+
+  // Auto-collapse when playback starts so the animation is visible
+  React.useEffect(() => {
+    if (playing) setCollapsed(true);
+  }, [playing]);
+
   if (!dateRange || !currentDate) {
     return (
       <div style={tlSt.container}>
@@ -1131,6 +1139,47 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({
   const todayStart    = ifcKits.filter(k => k.fecha_inicio === currentDate);
   const todayComplete = ifcKits.filter(k => k.fecha_fin    === currentDate);
 
+  if (collapsed) {
+    return (
+      <div style={tlSt.container}>
+        <div style={tlSt.header}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: '#f59e0b', fontSize: 15 }}>◷</span>
+            <span style={tlSt.headerTitle}>TIMELINER</span>
+            <span style={tlSt.headerSub}>{fmtDateES(dateRange.start)} → {fmtDateES(dateRange.end)}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button style={tlSt.collapseBtn} onClick={() => setCollapsed(false)} title="Expandir panel">▼</button>
+            <button style={tlSt.closeBtn} onClick={onClose} title="Cerrar timeliner">✕</button>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px 8px' }}>
+          <button style={tlSt.ctrlBtn} onClick={onStop} title="Reiniciar">⏮</button>
+          <button
+            style={{ ...tlSt.ctrlBtn, ...(playing ? tlSt.pauseBtn : tlSt.playBtn) }}
+            onClick={onTogglePlay}
+            title={playing ? 'Pausar' : 'Reproducir'}
+          >
+            {playing ? '⏸' : '▶'}
+          </button>
+          <span style={tlSt.dateLabel}>{fmtDateES(currentDate)}</span>
+          <span style={tlSt.progressPct}>{progress}%</span>
+          <input
+            type="range"
+            min={0}
+            max={totalDays}
+            value={sliderVal}
+            onChange={e => onDateChange(addDays(dateRange.start, Number(e.target.value)))}
+            style={{ ...tlSt.slider, flex: 1 }}
+          />
+        </div>
+        <div style={tlSt.progressBarWrap}>
+          <div style={{ ...tlSt.progressFill, width: `${progress}%` }} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={tlSt.container}>
       {/* Header */}
@@ -1140,7 +1189,10 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({
           <span style={tlSt.headerTitle}>TIMELINER</span>
           <span style={tlSt.headerSub}>{fmtDateES(dateRange.start)} → {fmtDateES(dateRange.end)}</span>
         </div>
-        <button style={tlSt.closeBtn} onClick={onClose} title="Cerrar timeliner">✕</button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button style={tlSt.collapseBtn} onClick={() => setCollapsed(true)} title="Colapsar panel">▲</button>
+          <button style={tlSt.closeBtn} onClick={onClose} title="Cerrar timeliner">✕</button>
+        </div>
       </div>
 
       {/* Controls row */}
@@ -1339,6 +1391,7 @@ const tlSt: Record<string, React.CSSProperties> = {
   headerTitle:    { fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#f59e0b' },
   headerSub:      { fontSize: 9, color: '#64748b', marginLeft: 6 },
   closeBtn:       { background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, padding: '2px 4px', borderRadius: 4, lineHeight: 1 },
+  collapseBtn:    { background: 'none', border: 'none', color: '#f59e0b', cursor: 'pointer', fontSize: 10, padding: '2px 5px', borderRadius: 4, lineHeight: 1, opacity: 0.8 },
   controlsRow:    { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px 4px' },
   dateLabel:      { fontSize: 13, fontWeight: 700, color: '#e2e8f0', fontFamily: '"IBM Plex Mono","Fira Code",monospace', marginRight: 8 },
   progressPct:    { fontSize: 9, color: '#64748b' },
@@ -1425,10 +1478,10 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     const load = async () => {
       try {
         const [masterRes, projectRes, masterSchedRes, projectSchedRes] = await Promise.all([
-          fetch('http://localhost:8000/api/activity-kits/').then(r => r.json()),
-          fetch(`http://localhost:8000/api/activity-kits/?proyecto=${projectId}`).then(r => r.json()),
-          fetch('http://localhost:8000/api/schedule-kits/').then(r => r.json()),
-          fetch(`http://localhost:8000/api/schedule-kits/?proyecto=${projectId}`).then(r => r.json()),
+          api.get('/activity-kits/').then(r => r.data),
+          api.get(`/activity-kits/?proyecto=${projectId}`).then(r => r.data),
+          api.get('/schedule-kits/').then(r => r.data),
+          api.get(`/schedule-kits/?proyecto=${projectId}`).then(r => r.data),
         ]);
         setKits([...(masterRes as ActivityKit[]), ...(projectRes as ActivityKit[])]);
         setScheduleKits([...(masterSchedRes as ScheduleKit[]), ...(projectSchedRes as ScheduleKit[])]);
@@ -1818,16 +1871,8 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
       const formData = new FormData();
       formData.append('video', blob, 'timeliner.webm');
       try {
-        const response = await fetch('http://localhost:8000/api/convert-video/', {
-          method: 'POST',
-          body: formData,
-        });
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Error desconocido' }));
-          alert(`Error al convertir: ${err.error}`);
-          return;
-        }
-        const mp4Blob = await response.blob();
+        const response = await api.post('/convert-video/', formData, { responseType: 'blob' });
+        const mp4Blob = response.data as Blob;
         const url = URL.createObjectURL(mp4Blob);
         const a = document.createElement('a');
         a.href = url;

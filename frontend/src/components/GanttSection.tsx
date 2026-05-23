@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
-
-const API = 'http://localhost:8000/api';
+import api from '../api';
 
 interface ScheduleActivity {
   id: number;
@@ -134,8 +132,8 @@ const GanttSection = ({ projectId, panel = false, timelineDate }: {
     if (!projectId) return;
     setLoading(true);
     Promise.all([
-      axios.get(`${API}/schedule-kits/?proyecto=${projectId}`),
-      axios.get(`${API}/schedule-kits/`),           // master catalog (proyecto=null)
+      api.get(`/schedule-kits/?proyecto=${projectId}`),
+      api.get(`/schedule-kits/`),
     ]).then(([projRes, masterRes]) => {
       setProjectKits(projRes.data);
       setMasterKits(masterRes.data);

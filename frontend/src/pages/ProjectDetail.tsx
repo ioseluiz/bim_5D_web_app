@@ -37,8 +37,23 @@ interface KitBudgetEntry {
   itemCount: number;
 }
 
+interface ScheduleActShort {
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+}
+
+interface ScheduleKitShort {
+  id: number;
+  fecha_inicio?: string | null;
+  fecha_fin?: string | null;
+  kit_actividades: ScheduleActShort[];
+}
+
 const fmtBudget = (n: number) =>
   n.toLocaleString('es-PA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const fmtShortDate = (d: string) =>
+  new Date(d + 'T12:00:00').toLocaleDateString('es', { day: 'numeric', month: 'short', year: '2-digit' });
 
 const ProjectDetail = () => {
   const { id } = useParams();
@@ -69,6 +84,8 @@ const ProjectDetail = () => {
   const [masterKits,    setMasterKits]    = useState<KitSummary[]>([]);
   const [budgetItems,   setBudgetItems]   = useState<BudgetItem[]>([]);
   const [loadingBudget, setLoadingBudget] = useState(false);
+  const [scheduleKits,  setScheduleKits]  = useState<ScheduleKitShort[]>([]);
+  const [masterSchedKits, setMasterSchedKits] = useState<ScheduleKitShort[]>([]);
 
   useEffect(() => {
     fetchProject();
@@ -104,6 +121,14 @@ const ProjectDetail = () => {
     api.get(`/budget-items/?proyecto=${id}`)
       .then(r => { setBudgetItems(r.data); setLoadingBudget(false); })
       .catch(() => setLoadingBudget(false));
+
+    api.get(`/schedule-kits/?proyecto=${id}`)
+      .then(r => setScheduleKits(r.data))
+      .catch(console.error);
+
+    api.get('/schedule-kits/')
+      .then(r => setMasterSchedKits(r.data))
+      .catch(console.error);
   }, [id]);
 
   // Group budget items by kit
@@ -134,6 +159,32 @@ const ProjectDetail = () => {
     budgetByKit.reduce((s, e) => s + e.total, 0),
     [budgetByKit],
   );
+
+  const projectDuration = useMemo(() => {
+    const projectCodes = new Set(scheduleKits.map(k => k.codigo_kit).filter(Boolean));
+    // Same logic as GanttSection: project kits + master kits not already covered
+    const allKits = [
+      ...scheduleKits,
+      ...masterSchedKits.filter(k => k.codigo_kit && !projectCodes.has(k.codigo_kit)),
+    ];
+    const starts: string[] = [];
+    const ends: string[] = [];
+    for (const kit of allKits) {
+      for (const act of kit.kit_actividades) {
+        if (act.fecha_inicio) starts.push(act.fecha_inicio);
+        if (act.fecha_fin) ends.push(act.fecha_fin);
+      }
+      if (kit.fecha_inicio) starts.push(kit.fecha_inicio);
+      if (kit.fecha_fin) ends.push(kit.fecha_fin);
+    }
+    if (!starts.length || !ends.length) return null;
+    const earliest = starts.reduce((a, b) => (a < b ? a : b));
+    const latest   = ends.reduce((a, b)   => (a > b ? a : b));
+    const days = Math.round(
+      (new Date(latest + 'T12:00:00').getTime() - new Date(earliest + 'T12:00:00').getTime()) / 86400000
+    ) + 1;
+    return { days, earliest, latest };
+  }, [scheduleKits, masterSchedKits]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -289,7 +340,7 @@ const ProjectDetail = () => {
             <div className="card-header bg-success text-white py-2 px-3 d-flex align-items-center gap-2">
               <i className="bi bi-cash-stack" />
               <span className="fw-bold small flex-grow-1">
-                {activeKitIds && activeKitIds.size > 0 ? 'Subtotal Filtrado' : 'Total General'}
+                {activeKitIds && activeKitIds.size > 0 ? 'Subtotal Filtrado' : 'Total General - Selección en Modelo'}
               </span>
               {activeKitIds && activeKitIds.size > 0 && (
                 <span className="badge bg-white text-success" style={{ fontSize: '0.65rem' }}>
@@ -313,6 +364,32 @@ const ProjectDetail = () => {
                     </div>
                   )}
                 </>
+              )}
+            </div>
+          </div>
+
+          <div className="card shadow-sm border-0 mt-3">
+            <div className="card-header bg-primary text-white py-2 px-3 d-flex align-items-center gap-2">
+              <i className="bi bi-calendar-range" />
+              <span className="fw-bold small flex-grow-1">Duración del Proyecto</span>
+            </div>
+            <div className="card-body text-center py-3 px-2">
+              {projectDuration ? (
+                <>
+                  <div className="fw-bold text-primary font-monospace" style={{ fontSize: '1.35rem' }}>
+                    {projectDuration.days.toLocaleString()} días
+                  </div>
+                  <div className="text-muted mt-1" style={{ fontSize: '0.72rem' }}>
+                    <span>{fmtShortDate(projectDuration.earliest)}</span>
+                    <span className="mx-1 text-secondary">→</span>
+                    <span>{fmtShortDate(projectDuration.latest)}</span>
+                  </div>
+                </>
+              ) : (
+                <span className="text-muted small">
+                  <i className="bi bi-calendar-x me-1" />
+                  Sin fechas en cronograma
+                </span>
               )}
             </div>
           </div>

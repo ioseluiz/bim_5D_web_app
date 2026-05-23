@@ -9,6 +9,7 @@ class KitCronograma(models.Model):
     )
     nombre = models.CharField(max_length=255, verbose_name="Nombre del Kit")
     descripcion = models.TextField(blank=True, null=True, verbose_name="Descripción")
+    color = models.CharField(max_length=9, blank=True, default='#22c55e', verbose_name="Color del Kit")
     proyecto = models.ForeignKey(
         'bim.Project',
         on_delete=models.CASCADE,
@@ -30,6 +31,7 @@ class ActividadCronograma(models.Model):
     descripcion = models.TextField(verbose_name="Descripción")
     fecha_inicio = models.DateField(null=True, blank=True, verbose_name="Fecha de Inicio")
     fecha_fin = models.DateField(null=True, blank=True, verbose_name="Fecha de Fin")
+    duracion = models.PositiveIntegerField(null=True, blank=True, verbose_name="Duración (días)")
     fase = models.CharField(max_length=100, blank=True, default='', verbose_name="Fase")
     sector = models.CharField(max_length=100, blank=True, default='', verbose_name="Sector")
     division = models.ForeignKey(

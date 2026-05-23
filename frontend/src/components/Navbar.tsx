@@ -2,10 +2,18 @@ import { NavLink } from 'react-router-dom';
 
 const Navbar = () => {
   return (
-    <nav className="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow-sm">
+    <nav className="navbar navbar-expand-lg navbar-navy mb-4 shadow">
       <div className="container">
-        <NavLink className="navbar-brand fw-bold" to="/">
-          <i className="bi bi-building-gear me-2"></i>INIO BIM 5D
+        <NavLink className="navbar-brand d-flex align-items-center gap-2 text-decoration-none" to="/">
+          <i className="bi bi-building-gear" style={{ fontSize: 26, color: '#fff', flexShrink: 0 }} />
+          <div className="d-flex flex-column" style={{ lineHeight: 1.15 }}>
+            <span style={{ fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: '0.06em' }}>
+              INIO
+            </span>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.82)', letterSpacing: '0.03em', fontWeight: 400 }}>
+              Ingeniería de Costos y Especificaciones
+            </span>
+          </div>
         </NavLink>
         <button className="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
           <span className="navbar-toggler-icon"></span>

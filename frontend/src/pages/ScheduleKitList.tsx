@@ -30,6 +30,7 @@ interface KitActivity {
   descripcion: string;
   fecha_inicio: string | null;
   fecha_fin: string | null;
+  duracion: number | null;
   fase: string;
   sector: string;
   division: number | null;
@@ -43,6 +44,9 @@ interface ScheduleKit {
   codigo_kit: string;
   nombre: string;
   descripcion: string;
+  color?: string;
+  fecha_inicio?: string | null;
+  fecha_fin?: string | null;
   kit_actividades: KitActivity[];
 }
 
@@ -51,6 +55,7 @@ type ActivityFormData = {
   descripcion: string;
   fecha_inicio: string;
   fecha_fin: string;
+  duracion: string;
   fase: string;
   sector: string;
   division: string;
@@ -62,10 +67,21 @@ const EMPTY_ACTIVITY: ActivityFormData = {
   descripcion: '',
   fecha_inicio: '',
   fecha_fin: '',
+  duracion: '',
   fase: '',
   sector: '',
   division: '',
   base_actividad: null,
+};
+
+const calcDuracion = (inicio: string, fin: string): string => {
+  if (!inicio || !fin) return '';
+  const [y1, m1, d1] = inicio.split('-').map(Number);
+  const [y2, m2, d2] = fin.split('-').map(Number);
+  const a = Date.UTC(y1, m1 - 1, d1);
+  const b = Date.UTC(y2, m2 - 1, d2);
+  const diff = Math.round((b - a) / 86400000) + 1;
+  return diff >= 1 ? String(diff) : '';
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -91,7 +107,7 @@ const ScheduleKitList = () => {
   // Kit modal
   const [showKitModal, setShowKitModal] = useState(false);
   const [currentKit, setCurrentKit] = useState<ScheduleKit | null>(null);
-  const [kitForm, setKitForm] = useState({ codigo_kit: '', nombre: '', descripcion: '' });
+  const [kitForm, setKitForm] = useState({ codigo_kit: '', nombre: '', descripcion: '', color: '#22c55e' });
   const [savingKit, setSavingKit] = useState(false);
 
   // Inline activity form (inside modal)
@@ -153,7 +169,7 @@ const ScheduleKitList = () => {
 
   const openNewKit = () => {
     setCurrentKit(null);
-    setKitForm({ codigo_kit: '', nombre: '', descripcion: '' });
+    setKitForm({ codigo_kit: '', nombre: '', descripcion: '', color: '#22c55e' });
     setActivityForm(null);
     setEditingActivityId(null);
     setShowKitModal(true);
@@ -161,7 +177,7 @@ const ScheduleKitList = () => {
 
   const openEditKit = (kit: ScheduleKit) => {
     setCurrentKit(kit);
-    setKitForm({ codigo_kit: kit.codigo_kit || '', nombre: kit.nombre, descripcion: kit.descripcion || '' });
+    setKitForm({ codigo_kit: kit.codigo_kit || '', nombre: kit.nombre, descripcion: kit.descripcion || '', color: kit.color || '#22c55e' });
     setActivityForm(null);
     setEditingActivityId(null);
     setShowKitModal(true);
@@ -171,7 +187,7 @@ const ScheduleKitList = () => {
     e.preventDefault();
     setSavingKit(true);
     try {
-      const data = { codigo_kit: kitForm.codigo_kit || null, nombre: kitForm.nombre, descripcion: kitForm.descripcion };
+      const data = { codigo_kit: kitForm.codigo_kit || null, nombre: kitForm.nombre, descripcion: kitForm.descripcion, color: kitForm.color };
       if (currentKit) {
         const res = await axios.put(`${API}/schedule-kits/${currentKit.id}/`, data);
         setCurrentKit(res.data);
@@ -214,6 +230,7 @@ const ScheduleKitList = () => {
       descripcion: act.descripcion,
       fecha_inicio: act.fecha_inicio || '',
       fecha_fin: act.fecha_fin || '',
+      duracion: act.duracion != null ? String(act.duracion) : '',
       fase: act.fase || '',
       sector: act.sector || '',
       division: act.division != null ? String(act.division) : '',
@@ -224,12 +241,23 @@ const ScheduleKitList = () => {
   const handleSaveActivity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentKit || !activityForm) return;
+
+    if (!activityForm.fecha_inicio || !activityForm.fecha_fin) {
+      alert('La fecha de inicio y la fecha de fin son obligatorias.');
+      return;
+    }
+    if (activityForm.fecha_fin < activityForm.fecha_inicio) {
+      alert('La fecha de fin no puede ser menor a la fecha de inicio.');
+      return;
+    }
+
     setSavingActivity(true);
     try {
       const payload = {
         ...activityForm,
         fecha_inicio: activityForm.fecha_inicio || null,
         fecha_fin: activityForm.fecha_fin || null,
+        duracion: activityForm.duracion !== '' ? parseInt(activityForm.duracion) : null,
         division: activityForm.division ? parseInt(activityForm.division) : null,
       };
       if (editingActivityId) {
@@ -410,11 +438,29 @@ const ScheduleKitList = () => {
               <div className="card-header bg-white py-3 d-flex justify-content-between align-items-start">
                 <div>
                   {kit.codigo_kit && (
-                    <span className="badge bg-dark font-monospace mb-1 d-inline-block" style={{ letterSpacing: '0.05em' }}>
-                      {kit.codigo_kit}
-                    </span>
+                    <div className="d-flex align-items-center gap-2 mb-1">
+                      <span
+                        style={{
+                          width: 12, height: 12, borderRadius: '50%',
+                          backgroundColor: kit.color || '#22c55e',
+                          border: '2px solid rgba(0,0,0,0.1)',
+                          display: 'inline-block', flexShrink: 0,
+                        }}
+                      />
+                      <span className="badge bg-dark font-monospace" style={{ letterSpacing: '0.05em' }}>
+                        {kit.codigo_kit}
+                      </span>
+                    </div>
                   )}
                   <h5 className="mb-0 fw-bold text-dark">{kit.nombre}</h5>
+                  {(kit.fecha_inicio || kit.fecha_fin) && (
+                    <div className="text-muted small mt-1">
+                      <i className="bi bi-calendar3 me-1"></i>
+                      {kit.fecha_inicio ? new Date(kit.fecha_inicio + 'T12:00:00').toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' }) : '?'}
+                      {' → '}
+                      {kit.fecha_fin ? new Date(kit.fecha_fin + 'T12:00:00').toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' }) : '?'}
+                    </div>
+                  )}
                 </div>
                 <span className="badge bg-primary rounded-pill ms-2">{kit.kit_actividades.length} actividades</span>
               </div>
@@ -521,7 +567,7 @@ const ScheduleKitList = () => {
                         />
                       </div>
 
-                      <div className="mb-4">
+                      <div className="mb-3">
                         <label className="form-label fw-semibold small text-muted">Descripción</label>
                         <textarea
                           className="form-control"
@@ -530,6 +576,33 @@ const ScheduleKitList = () => {
                           onChange={e => setKitForm(p => ({ ...p, descripcion: e.target.value }))}
                           placeholder="Descripción opcional…"
                         />
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="form-label fw-semibold small">Color del Kit</label>
+                        <div className="d-flex align-items-center gap-2">
+                          <input
+                            type="color"
+                            className="form-control form-control-color"
+                            value={kitForm.color}
+                            onChange={e => setKitForm(p => ({ ...p, color: e.target.value }))}
+                            title="Seleccionar color"
+                            style={{ width: 44, height: 36, padding: 2, cursor: 'pointer' }}
+                          />
+                          <input
+                            type="text"
+                            className="form-control form-control-sm font-monospace"
+                            value={kitForm.color}
+                            onChange={e => {
+                              const v = e.target.value;
+                              if (/^#[0-9a-fA-F]{0,6}$/.test(v)) setKitForm(p => ({ ...p, color: v }));
+                            }}
+                            maxLength={7}
+                            placeholder="#22c55e"
+                            style={{ width: 90 }}
+                          />
+                          <small className="text-muted">Visible en el visor BIM</small>
+                        </div>
                       </div>
 
                       <button type="submit" className="btn btn-primary w-100 fw-bold" disabled={savingKit}>
@@ -578,9 +651,10 @@ const ScheduleKitList = () => {
                               <tr>
                                 <th style={{ width: 110 }}>Código</th>
                                 <th>Descripción</th>
-                                <th style={{ width: 80 }}>División</th>
-                                <th style={{ width: 95 }}>F. Inicio</th>
-                                <th style={{ width: 95 }}>F. Fin</th>
+                                <th style={{ width: 70 }}>División</th>
+                                <th style={{ width: 88 }}>F. Inicio</th>
+                                <th style={{ width: 88 }}>F. Fin</th>
+                                <th style={{ width: 60 }} className="text-center">Dur.</th>
                                 <th style={{ width: 60 }}></th>
                               </tr>
                             </thead>
@@ -606,6 +680,12 @@ const ScheduleKitList = () => {
                                   </td>
                                   <td className="align-middle"><small className="text-muted">{act.fecha_inicio || '—'}</small></td>
                                   <td className="align-middle"><small className="text-muted">{act.fecha_fin || '—'}</small></td>
+                                  <td className="text-center align-middle">
+                                    {act.duracion != null
+                                      ? <span className="badge bg-light text-dark border" style={{ fontSize: 10 }}>{act.duracion}d</span>
+                                      : <small className="text-muted">—</small>
+                                    }
+                                  </td>
                                   <td className="align-middle">
                                     <div className="d-flex gap-1 justify-content-end">
                                       <button className="btn btn-link btn-sm p-0 text-primary" title="Editar" onClick={() => openEditActivity(act)}>
@@ -620,7 +700,7 @@ const ScheduleKitList = () => {
                               ))}
                               {currentKit.kit_actividades.length === 0 && (
                                 <tr>
-                                  <td colSpan={6} className="text-center text-muted py-4 small">
+                                  <td colSpan={7} className="text-center text-muted py-4 small">
                                     <i className="bi bi-inbox me-1"></i>Sin actividades. Importa del catálogo o crea nuevas.
                                   </td>
                                 </tr>
@@ -667,7 +747,14 @@ const ScheduleKitList = () => {
                                   type="date"
                                   className="form-control form-control-sm"
                                   value={activityForm.fecha_inicio}
-                                  onChange={e => setActivityForm(p => p && ({ ...p, fecha_inicio: e.target.value }))}
+                                  onChange={e => {
+                                    const inicio = e.target.value;
+                                    setActivityForm(p => {
+                                      if (!p) return p;
+                                      const dur = calcDuracion(inicio, p.fecha_fin);
+                                      return { ...p, fecha_inicio: inicio, ...(dur !== '' ? { duracion: dur } : {}) };
+                                    });
+                                  }}
                                 />
                               </div>
                               <div className="col-md-3">
@@ -676,10 +763,36 @@ const ScheduleKitList = () => {
                                   type="date"
                                   className="form-control form-control-sm"
                                   value={activityForm.fecha_fin}
-                                  onChange={e => setActivityForm(p => p && ({ ...p, fecha_fin: e.target.value }))}
+                                  onChange={e => {
+                                    const fin = e.target.value;
+                                    setActivityForm(p => {
+                                      if (!p) return p;
+                                      const dur = calcDuracion(p.fecha_inicio, fin);
+                                      return { ...p, fecha_fin: fin, ...(dur !== '' ? { duracion: dur } : {}) };
+                                    });
+                                  }}
                                 />
                               </div>
-                              <div className="col-md-3">
+                              <div className="col-md-2">
+                                <label className="form-label small fw-semibold d-flex align-items-center gap-1">
+                                  Duración
+                                  {activityForm.fecha_inicio && activityForm.fecha_fin && (
+                                    <span className="badge bg-secondary" style={{ fontSize: 8, fontWeight: 400 }}>auto</span>
+                                  )}
+                                </label>
+                                <div className="input-group input-group-sm">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    className="form-control form-control-sm"
+                                    value={activityForm.duracion}
+                                    placeholder="días"
+                                    onChange={e => setActivityForm(p => p && ({ ...p, duracion: e.target.value }))}
+                                  />
+                                  <span className="input-group-text px-1" style={{ fontSize: 10 }}>d</span>
+                                </div>
+                              </div>
+                              <div className="col-md-2">
                                 <label className="form-label small fw-semibold">Fase</label>
                                 <input
                                   type="text"
@@ -689,7 +802,7 @@ const ScheduleKitList = () => {
                                   onChange={e => setActivityForm(p => p && ({ ...p, fase: e.target.value }))}
                                 />
                               </div>
-                              <div className="col-md-3">
+                              <div className="col-md-2">
                                 <label className="form-label small fw-semibold">Sector</label>
                                 <input
                                   type="text"

@@ -13,8 +13,27 @@ interface ActivityKit {
   codigo_kit: string;
   nombre: string;
   descripcion: string;
+  color?: string;
   kit_activities: { id: number; codigo_actividad: string; descripcion: string }[];
   proyecto?: number | null;
+}
+
+interface ScheduleActivity {
+  id: number;
+  codigo_actividad: string;
+  descripcion: string;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+}
+
+interface ScheduleKit {
+  id: number;
+  codigo_kit: string;
+  nombre?: string;
+  color?: string;
+  fecha_inicio?: string | null;
+  fecha_fin?: string | null;
+  kit_actividades?: ScheduleActivity[];
 }
 
 interface IFCActivity {
@@ -45,6 +64,7 @@ interface BimViewerProps {
   projectId?: string | number;
   onElementSelect?: (data: { guid: string; category: string; tipo: string }) => void;
   onActiveKitIdsChange?: (kitIds: Set<number> | null) => void;
+  onTimelineUpdate?: (date: string | null) => void;
 }
 
 interface ElementProperties {
@@ -152,7 +172,7 @@ async function scanProperties(
   for (const p of targetProps) result.set(p, new Map());
 
   // Normalised name → original name for fast lookup
-  const normalTargets = new Map(targetProps.map((p) => [p.toLowerCase().trim(), p]));
+  const normalTargets = new Map(targetProps.map((p) => [p.toLowerCase().trim().replace(/\s+/g, '_'), p]));
 
   const api = new WEBIFC.IfcAPI();
   api.SetWasmPath(wasmPath, true);
@@ -190,7 +210,7 @@ async function scanProperties(
           typeof prop.Name === 'object' && prop.Name !== null
             ? String(prop.Name.value ?? '') : String(prop.Name ?? '');
 
-        const normalName = propName.toLowerCase().trim();
+        const normalName = propName.toLowerCase().trim().replace(/\s+/g, '_');
         if (!normalTargets.has(normalName)) continue;
         const originalName = normalTargets.get(normalName)!;
 
@@ -325,6 +345,26 @@ function countModelIdMap(map: OBC.ModelIdMap): number {
   return Object.values(map).reduce((a, s) => a + (s as Set<number>).size, 0);
 }
 
+// ─── Timeline helpers ─────────────────────────────────────────────────────────
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function fmtDateES(dateStr: string): string {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('es', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  });
+}
+
+function daysBetween(a: string, b: string): number {
+  return Math.round(
+    (new Date(b + 'T12:00:00').getTime() - new Date(a + 'T12:00:00').getTime()) / 86400000,
+  );
+}
+
 // ─── Filter Panel ──────────────────────────────────────────────────────────────
 
 interface FilterPanelProps {
@@ -334,19 +374,28 @@ interface FilterPanelProps {
   ifcActivities: IFCActivity[];
   selectedActivityIds: Set<number>;
   activityKitCodes: Set<string>;
+  kitColorMap: Record<string, string>;
+  colorByKit: boolean;
+  scheduleKitColorMap: Record<string, string>;
+  colorByCronKit: boolean;
   onToggle: (propName: string, value: string) => void;
   onClearProp: (propName: string) => void;
   onClearAll: () => void;
   onToggleActivity: (actId: number) => void;
   onClearActivities: () => void;
+  onToggleColorByKit: () => void;
+  onToggleColorByCronKit: () => void;
   onClose: () => void;
 }
 
 const FilterPanel: React.FC<FilterPanelProps> = ({
   multiIndex, filterState, scanning,
   ifcActivities, selectedActivityIds, activityKitCodes,
+  kitColorMap, colorByKit,
+  scheduleKitColorMap, colorByCronKit,
   onToggle, onClearProp, onClearAll,
-  onToggleActivity, onClearActivities, onClose,
+  onToggleActivity, onClearActivities,
+  onToggleColorByKit, onToggleColorByCronKit, onClose,
 }) => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({
     division: true, codigo_kit_actividad: true, codigo_cronograma: true, __activities__: true, 'Master Format': true,
@@ -412,6 +461,36 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
               title={`Limpiar ${label}`}
             >✕</button>
           )}
+          {propName === 'codigo_kit_actividad' && propIdx && propIdx.size > 0 && (
+            <button
+              style={{
+                background: colorByKit ? 'rgba(56,189,248,0.15)' : 'none',
+                border: colorByKit ? '1px solid rgba(56,189,248,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                color: colorByKit ? '#38bdf8' : '#64748b',
+                borderRadius: 4, fontSize: 11, padding: '1px 5px',
+                cursor: 'pointer', marginRight: 2, lineHeight: 1,
+              }}
+              onClick={(e) => { e.stopPropagation(); onToggleColorByKit(); }}
+              title={colorByKit ? 'Desactivar colores de kit' : 'Colorear objetos por kit'}
+            >
+              🎨
+            </button>
+          )}
+          {propName === 'codigo_cronograma' && propIdx && propIdx.size > 0 && (
+            <button
+              style={{
+                background: colorByCronKit ? 'rgba(34,197,94,0.15)' : 'none',
+                border: colorByCronKit ? '1px solid rgba(34,197,94,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                color: colorByCronKit ? '#22c55e' : '#64748b',
+                borderRadius: 4, fontSize: 11, padding: '1px 5px',
+                cursor: 'pointer', marginRight: 2, lineHeight: 1,
+              }}
+              onClick={(e) => { e.stopPropagation(); onToggleColorByCronKit(); }}
+              title={colorByCronKit ? 'Desactivar colores de kit cronograma' : 'Colorear objetos por kit cronograma'}
+            >
+              🎨
+            </button>
+          )}
           <span style={{ ...fpSt.chevron, transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
             ▾
           </span>
@@ -465,6 +544,24 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
                         }}>
                           {isActive ? '✓' : ''}
                         </span>
+                        {propName === 'codigo_kit_actividad' && kitColorMap[value] && (
+                          <span style={{
+                            width: 8, height: 8, borderRadius: '50%',
+                            backgroundColor: kitColorMap[value],
+                            flexShrink: 0, display: 'inline-block',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            marginRight: 2,
+                          }} />
+                        )}
+                        {propName === 'codigo_cronograma' && scheduleKitColorMap[value] && (
+                          <span style={{
+                            width: 8, height: 8, borderRadius: '50%',
+                            backgroundColor: scheduleKitColorMap[value],
+                            flexShrink: 0, display: 'inline-block',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            marginRight: 2,
+                          }} />
+                        )}
                         <span style={{ ...fpSt.valueLabel, ...(isActive ? { color: '#e2e8f0' } : {}) }} title={value}>
                           {value}
                         </span>
@@ -966,12 +1063,263 @@ const mSt: Record<string, React.CSSProperties> = {
   clearBtn:  { display: 'block', width: 'calc(100% - 12px)', margin: '6px 6px 8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', borderRadius: 6, padding: '5px 8px', cursor: 'pointer', fontSize: 10, fontFamily: '"IBM Plex Mono",monospace' },
 };
 
+// ─── Timeline Panel ────────────────────────────────────────────────────────────
+
+interface TimelinePanelProps {
+  dateRange: { start: string; end: string } | null;
+  currentDate: string;
+  playing: boolean;
+  speed: number;
+  kits: ScheduleKit[];
+  multiIndex: MultiPropertyIndex;
+  doneColorMode: 'kit' | 'original' | 'uniform';
+  doneUniformColor: string;
+  onDateChange: (date: string) => void;
+  onTogglePlay: () => void;
+  onStop: () => void;
+  onDurationChange: (secs: number) => void;
+  onDoneColorModeChange: (mode: 'kit' | 'original' | 'uniform') => void;
+  onDoneUniformColorChange: (color: string) => void;
+  onClose: () => void;
+}
+
+const DURATIONS = [
+  { secs: 10,  label: '10s'  },
+  { secs: 30,  label: '30s'  },
+  { secs: 60,  label: '1min' },
+  { secs: 120, label: '2min' },
+  { secs: 300, label: '5min' },
+];
+
+const TICK_MS = 200;
+
+const TimelinePanel: React.FC<TimelinePanelProps> = ({
+  dateRange, currentDate, playing, duration, kits, multiIndex,
+  doneColorMode, doneUniformColor,
+  onDateChange, onTogglePlay, onStop, onDurationChange,
+  onDoneColorModeChange, onDoneUniformColorChange, onClose,
+}) => {
+  if (!dateRange || !currentDate) {
+    return (
+      <div style={tlSt.container}>
+        <div style={tlSt.header}>
+          <span style={tlSt.headerTitle}>◷ TIMELINER</span>
+          <button style={tlSt.closeBtn} onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: '14px', fontSize: 11, color: '#64748b', textAlign: 'center' }}>
+          Sin kits de cronograma con fechas detectadas en el modelo.
+        </div>
+      </div>
+    );
+  }
+
+  const totalDays = Math.max(1, daysBetween(dateRange.start, dateRange.end));
+  const elapsed   = Math.max(0, daysBetween(dateRange.start, currentDate));
+  const progress  = Math.min(100, Math.round((elapsed / totalDays) * 100));
+  const sliderVal = Math.max(0, Math.min(totalDays, elapsed));
+
+  const kitCodeIdx = multiIndex.get('codigo_cronograma');
+  const ifcKits    = kits.filter(k => k.codigo_kit && kitCodeIdx?.has(k.codigo_kit));
+
+  const completed  = ifcKits.filter(k => k.fecha_fin   && currentDate > k.fecha_fin);
+  const inProgress = ifcKits.filter(k => k.fecha_inicio && k.fecha_fin && currentDate >= k.fecha_inicio && currentDate <= k.fecha_fin);
+  const notStarted = ifcKits.filter(k => k.fecha_inicio && currentDate < k.fecha_inicio);
+  const todayStart    = ifcKits.filter(k => k.fecha_inicio === currentDate);
+  const todayComplete = ifcKits.filter(k => k.fecha_fin    === currentDate);
+
+  return (
+    <div style={tlSt.container}>
+      {/* Header */}
+      <div style={tlSt.header}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: '#f59e0b', fontSize: 15 }}>◷</span>
+          <span style={tlSt.headerTitle}>TIMELINER</span>
+          <span style={tlSt.headerSub}>{fmtDateES(dateRange.start)} → {fmtDateES(dateRange.end)}</span>
+        </div>
+        <button style={tlSt.closeBtn} onClick={onClose} title="Cerrar timeliner">✕</button>
+      </div>
+
+      {/* Controls row */}
+      <div style={tlSt.controlsRow}>
+        {/* Playback buttons */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button style={tlSt.ctrlBtn} onClick={onStop} title="Reiniciar al inicio">⏮</button>
+          <button
+            style={{ ...tlSt.ctrlBtn, ...(playing ? tlSt.pauseBtn : tlSt.playBtn) }}
+            onClick={onTogglePlay}
+            title={playing ? 'Pausar' : 'Reproducir'}
+          >
+            {playing ? '⏸' : '▶'}
+          </button>
+        </div>
+
+        {/* Current date + progress */}
+        <div style={{ flex: 1 }}>
+          <span style={tlSt.dateLabel}>{fmtDateES(currentDate)}</span>
+          <span style={tlSt.progressPct}>{progress}% · día {elapsed}/{totalDays}</span>
+        </div>
+
+        {/* Duration selector */}
+        <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+          <span style={{ fontSize: 9, color: '#475569', marginRight: 2, letterSpacing: '0.08em' }}>DUR</span>
+          {DURATIONS.map(({ secs, label }) => (
+            <button
+              key={secs}
+              style={{ ...tlSt.speedBtn, ...(duration === secs ? tlSt.speedBtnActive : {}) }}
+              onClick={() => onDurationChange(secs)}
+            >
+              {label}
+            </button>
+          ))}
+          <input
+            type="number"
+            min={1}
+            max={3600}
+            value={duration}
+            onChange={e => {
+              const v = Math.max(1, Math.min(3600, Number(e.target.value)));
+              if (!isNaN(v)) onDurationChange(v);
+            }}
+            style={tlSt.durationInput}
+            title="Duración total en segundos"
+          />
+          <span style={{ fontSize: 9, color: '#475569' }}>s</span>
+        </div>
+      </div>
+
+      {/* Computed info: días/tick + duración real */}
+      {dateRange && (() => {
+        const totalDays = Math.max(1, daysBetween(dateRange.start, dateRange.end));
+        const totalTicks = (duration * 1000) / TICK_MS;
+        const dpt = Math.max(1, Math.ceil(totalDays / totalTicks));
+        const realSecs = Math.round((totalDays / dpt) * TICK_MS / 1000);
+        const realLabel = realSecs < 60 ? `${realSecs}s` : `${Math.round(realSecs / 60)}min`;
+        return (
+          <div style={tlSt.durationInfo}>
+            {dpt} día{dpt !== 1 ? 's' : ''}/tick · duración real ~{realLabel} · {totalDays} días totales
+          </div>
+        );
+      })()}
+
+      {/* Slider */}
+      <div style={tlSt.sliderRow}>
+        <span style={tlSt.sliderEdge}>{dateRange.start.slice(0, 7)}</span>
+        <input
+          type="range"
+          min={0}
+          max={totalDays}
+          value={sliderVal}
+          onChange={e => onDateChange(addDays(dateRange.start, Number(e.target.value)))}
+          style={tlSt.slider}
+        />
+        <span style={tlSt.sliderEdge}>{dateRange.end.slice(0, 7)}</span>
+      </div>
+
+      {/* Progress bar */}
+      <div style={tlSt.progressBarWrap}>
+        <div style={{ ...tlSt.progressFill, width: `${progress}%` }} />
+      </div>
+
+      {/* Done color mode selector */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 14px 4px', flexWrap: 'wrap' as const }}>
+        <span style={{ fontSize: 9, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>Completados:</span>
+        {(['kit', 'original', 'uniform'] as const).map(mode => (
+          <button
+            key={mode}
+            onClick={() => onDoneColorModeChange(mode)}
+            style={{
+              ...tlSt.speedBtn,
+              ...(doneColorMode === mode ? tlSt.speedBtnActive : {}),
+              fontSize: 9,
+            }}
+          >
+            {mode === 'kit' ? 'Color del kit' : mode === 'original' ? 'Color original' : 'Color único'}
+          </button>
+        ))}
+        {doneColorMode === 'uniform' && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+            <input
+              type="color"
+              value={doneUniformColor}
+              onChange={e => onDoneUniformColorChange(e.target.value)}
+              style={{ width: 22, height: 18, border: 'none', borderRadius: 3, cursor: 'pointer', padding: 0, background: 'none' }}
+            />
+            <span style={{ fontSize: 9, color: '#94a3b8', fontFamily: '"IBM Plex Mono",monospace' }}>{doneUniformColor}</span>
+          </label>
+        )}
+      </div>
+
+      {/* Summary + today events */}
+      <div style={tlSt.bottomRow}>
+        <div style={tlSt.summaryGroup}>
+          <span style={{ ...tlSt.badge, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
+            ✓ {completed.length} completados
+          </span>
+          <span style={{ ...tlSt.badge, background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+            ◑ {inProgress.length} en progreso
+          </span>
+          <span style={{ ...tlSt.badge, background: 'rgba(100,116,139,0.12)', color: '#64748b' }}>
+            ○ {notStarted.length} por iniciar
+          </span>
+        </div>
+
+        {(todayStart.length > 0 || todayComplete.length > 0) && (
+          <div style={tlSt.eventsRow}>
+            {todayStart.map(k => (
+              <div key={`s${k.id}`} style={tlSt.eventChip}>
+                <span style={{ color: '#f59e0b', marginRight: 3 }}>▶</span>
+                <span style={{ color: k.color || '#22c55e', marginRight: 3, fontWeight: 700 }}>{k.codigo_kit}</span>
+                {k.nombre && <span style={{ color: '#94a3b8' }}>{k.nombre}</span>}
+              </div>
+            ))}
+            {todayComplete.map(k => (
+              <div key={`c${k.id}`} style={tlSt.eventChip}>
+                <span style={{ color: '#22c55e', marginRight: 3 }}>✓</span>
+                <span style={{ color: k.color || '#22c55e', marginRight: 3, fontWeight: 700 }}>{k.codigo_kit}</span>
+                {k.nombre && <span style={{ color: '#94a3b8' }}>{k.nombre}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const tlSt: Record<string, React.CSSProperties> = {
+  container:      { ...BASE, position: 'absolute', bottom: '52px', left: '50%', transform: 'translateX(-50%)', width: 760, maxWidth: 'calc(100% - 32px)', zIndex: 1000 },
+  header:         { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 14px', borderBottom: '1px solid rgba(255,255,255,0.07)', backgroundColor: 'rgba(245,158,11,0.04)', flexShrink: 0 },
+  headerTitle:    { fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#f59e0b' },
+  headerSub:      { fontSize: 9, color: '#64748b', marginLeft: 6 },
+  closeBtn:       { background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, padding: '2px 4px', borderRadius: 4, lineHeight: 1 },
+  controlsRow:    { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px 4px' },
+  dateLabel:      { fontSize: 13, fontWeight: 700, color: '#e2e8f0', fontFamily: '"IBM Plex Mono","Fira Code",monospace', marginRight: 8 },
+  progressPct:    { fontSize: 9, color: '#64748b' },
+  ctrlBtn:        { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', cursor: 'pointer', borderRadius: 5, padding: '4px 10px', fontSize: 13, lineHeight: 1, fontFamily: '"IBM Plex Mono",monospace' },
+  playBtn:        { backgroundColor: 'rgba(245,158,11,0.18)', borderColor: 'rgba(245,158,11,0.4)', color: '#f59e0b' },
+  pauseBtn:       { backgroundColor: 'rgba(148,163,184,0.1)', borderColor: 'rgba(148,163,184,0.25)', color: '#94a3b8' },
+  speedBtn:       { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#475569', cursor: 'pointer', borderRadius: 4, padding: '3px 7px', fontSize: 9, fontFamily: '"IBM Plex Mono",monospace', lineHeight: 1 },
+  speedBtnActive: { backgroundColor: 'rgba(56,189,248,0.15)', borderColor: 'rgba(56,189,248,0.3)', color: '#38bdf8' },
+  sliderRow:      { display: 'flex', alignItems: 'center', gap: 8, padding: '2px 14px 4px' },
+  sliderEdge:     { fontSize: 9, color: '#475569', whiteSpace: 'nowrap' as const, flexShrink: 0, fontFamily: '"IBM Plex Mono",monospace' },
+  slider:         { flex: 1, accentColor: '#f59e0b', cursor: 'pointer' },
+  progressBarWrap:{ height: 3, backgroundColor: 'rgba(255,255,255,0.05)', margin: '0 14px 6px', borderRadius: 2, overflow: 'hidden' },
+  progressFill:   { height: '100%', backgroundColor: '#f59e0b', borderRadius: 2, transition: 'width 0.1s linear' },
+  bottomRow:      { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 14px 8px', flexWrap: 'wrap' as const },
+  summaryGroup:   { display: 'flex', gap: 5 },
+  badge:          { fontSize: 9, padding: '2px 8px', borderRadius: 8, fontWeight: 700, letterSpacing: '0.04em' },
+  eventsRow:      { display: 'flex', gap: 5, flexWrap: 'wrap' as const, flex: 1 },
+  eventChip:      { display: 'flex', alignItems: 'center', fontSize: 9, backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, padding: '2px 7px', fontFamily: '"IBM Plex Mono",monospace', letterSpacing: '0.04em', flexShrink: 0 },
+  durationInfo:   { fontSize: 9, color: '#475569', padding: '0 14px 5px', fontFamily: '"IBM Plex Mono",monospace', letterSpacing: '0.04em' },
+  durationInput:  { width: 42, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 4, color: '#e2e8f0', fontSize: 9, padding: '2px 5px', fontFamily: '"IBM Plex Mono",monospace', outline: 'none', textAlign: 'center' as const },
+};
+
 // ─── Main BimViewer ────────────────────────────────────────────────────────────
 
 const EMPTY_FILTER_STATE = (): FilterState =>
   Object.fromEntries(IFC_PROPS.map((p) => [p, new Set<string>()]));
 
-const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelect, onActiveKitIdsChange }) => {
+const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelect, onActiveKitIdsChange, onTimelineUpdate }) => {
   const containerRef  = useRef<HTMLDivElement>(null);
   const componentsRef = useRef<OBC.Components | null>(null);
   const hiderRef      = useRef<OBC.Hider | null>(null);
@@ -979,8 +1327,8 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
 
   const [selectedProperties, setSelectedProperties] = useState<ElementProperties | null>(null);
   const [loadingProps,  setLoadingProps]  = useState(false);
-  const [propPanelVis,  setPropPanelVis]  = useState(true);
-  const [filterPanelVis, setFilterPanelVis] = useState(true);
+  const [propPanelVis,  setPropPanelVis]  = useState(false);
+  const [filterPanelVis, setFilterPanelVis] = useState(false);
   const [multiIndex,    setMultiIndex]    = useState<MultiPropertyIndex>(new Map());
   const [scanning,      setScanning]      = useState(false);
   const [filterState,   setFilterState]   = useState<FilterState>(EMPTY_FILTER_STATE);
@@ -988,10 +1336,27 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
   // Kit + activity filter state
   const [kits,               setKits]               = useState<ActivityKit[]>([]);
   const [selectedActivityIds, setSelectedActivityIds] = useState<Set<number>>(new Set());
+  const [colorByKit,         setColorByKit]         = useState(false);
+  const kitColorGroupsRef = useRef<Set<string>>(new Set());
+
+  // Schedule kit color state
+  const [scheduleKits,       setScheduleKits]       = useState<ScheduleKit[]>([]);
+  const [colorByCronKit,     setColorByCronKit]     = useState(false);
+  const cronKitColorGroupsRef = useRef<Set<string>>(new Set());
+
+  // Timeliner state
+  const [timelinePanelVis,    setTimelinePanelVis]    = useState(false);
+  const [timelineActive,      setTimelineActive]      = useState(false);
+  const [timelineDateStr,     setTimelineDateStr]     = useState('');
+  const [timelinePlaying,     setTimelinePlaying]     = useState(false);
+  const [timelineDuration,    setTimelineDuration]    = useState(30);
+  const [doneColorMode,       setDoneColorMode]       = useState<'kit' | 'original' | 'uniform'>('kit');
+  const [doneUniformColor,    setDoneUniformColor]    = useState('#22c55e');
+  const timelineStylesRef = useRef<Set<string>>(new Set());
 
   // Measurement tools state
   const [activeMeasureTool, setActiveMeasureTool] = useState<'length' | 'area' | 'volume' | null>(null);
-  const [measurePanelVis,   setMeasurePanelVis]   = useState(true);
+  const [measurePanelVis,   setMeasurePanelVis]   = useState(false);
   const activeMeasureToolRef = useRef<'length' | 'area' | 'volume' | null>(null);
   const lengthMeasurerRef    = useRef<OBF.LengthMeasurement | null>(null);
   const areaMeasurerRef      = useRef<OBF.AreaMeasurement   | null>(null);
@@ -1006,14 +1371,14 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     if (!projectId) return;
     const load = async () => {
       try {
-        const [masterRes, projectRes] = await Promise.all([
+        const [masterRes, projectRes, masterSchedRes, projectSchedRes] = await Promise.all([
           fetch('http://localhost:8000/api/activity-kits/').then(r => r.json()),
           fetch(`http://localhost:8000/api/activity-kits/?proyecto=${projectId}`).then(r => r.json()),
+          fetch('http://localhost:8000/api/schedule-kits/').then(r => r.json()),
+          fetch(`http://localhost:8000/api/schedule-kits/?proyecto=${projectId}`).then(r => r.json()),
         ]);
-        setKits([
-          ...(masterRes as ActivityKit[]),
-          ...(projectRes as ActivityKit[]),
-        ]);
+        setKits([...(masterRes as ActivityKit[]), ...(projectRes as ActivityKit[])]);
+        setScheduleKits([...(masterSchedRes as ScheduleKit[]), ...(projectSchedRes as ScheduleKit[])]);
       } catch (err) {
         console.error('[BIM] Error cargando kits:', err);
       }
@@ -1049,10 +1414,230 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     return codes;
   }, [selectedActivityIds, ifcActivities]);
 
+  const kitColorMap = useMemo((): Record<string, string> => {
+    const map: Record<string, string> = {};
+    for (const kit of ifcKits) {
+      if (kit.codigo_kit && kit.color) map[kit.codigo_kit] = kit.color;
+    }
+    return map;
+  }, [ifcKits]);
+
+  const ifcScheduleKitCodes = useMemo(() => {
+    const idx = multiIndex.get('codigo_cronograma');
+    return idx ? new Set(idx.keys()) : new Set<string>();
+  }, [multiIndex]);
+
+  const ifcScheduleKits = useMemo(
+    () => scheduleKits.filter(k => k.codigo_kit && ifcScheduleKitCodes.has(k.codigo_kit)),
+    [scheduleKits, ifcScheduleKitCodes],
+  );
+
+  const scheduleKitColorMap = useMemo((): Record<string, string> => {
+    const map: Record<string, string> = {};
+    for (const kit of ifcScheduleKits) {
+      if (kit.codigo_kit && kit.color) map[kit.codigo_kit] = kit.color;
+    }
+    return map;
+  }, [ifcScheduleKits]);
+
+  // ── Timeline date range ──────────────────────────────────────────────────
+  const timelineDateRange = useMemo(() => {
+    const starts = ifcScheduleKits.filter(k => k.fecha_inicio).map(k => k.fecha_inicio!);
+    const ends   = ifcScheduleKits.filter(k => k.fecha_fin).map(k => k.fecha_fin!);
+    if (!starts.length || !ends.length) return null;
+    return { start: [...starts].sort()[0], end: [...ends].sort().reverse()[0] };
+  }, [ifcScheduleKits]);
+
+  const daysPerTick = useMemo(() => {
+    if (!timelineDateRange) return 1;
+    const totalDays = Math.max(1, daysBetween(timelineDateRange.start, timelineDateRange.end));
+    const totalTicks = (timelineDuration * 1000) / TICK_MS;
+    return Math.max(1, Math.ceil(totalDays / totalTicks));
+  }, [timelineDuration, timelineDateRange]);
+
+  useEffect(() => {
+    if (timelineDateRange && !timelineDateStr) {
+      setTimelineDateStr(addDays(timelineDateRange.start, -1));
+    }
+  }, [timelineDateRange]);
+
+  // ── Apply/clear schedule kit colors ─────────────────────────────────────
+  useEffect(() => {
+    const highlighter = highlighterRef.current;
+    if (!highlighter) return;
+
+    const clearPrev = async () => {
+      for (const styleName of cronKitColorGroupsRef.current) {
+        try { await highlighter.clear(styleName); } catch {}
+        highlighter.styles.delete(styleName);
+      }
+      cronKitColorGroupsRef.current.clear();
+    };
+
+    if (!colorByCronKit || timelineActive) {
+      clearPrev();
+      return;
+    }
+
+    (async () => {
+      await clearPrev();
+      const kitCodeIdx = multiIndex.get('codigo_cronograma');
+      if (!kitCodeIdx) return;
+      for (const kit of ifcScheduleKits) {
+        if (!kit.codigo_kit || !kit.color) continue;
+        const codeMap = kitCodeIdx.get(kit.codigo_kit);
+        if (!codeMap || Object.keys(codeMap).length === 0) continue;
+        const styleName = `__croncolor_${kit.codigo_kit}`;
+        highlighter.styles.set(styleName, {
+          color: new THREE.Color(kit.color),
+          renderedFaces: FRAGS.RenderedFaces.ONE,
+          opacity: 1,
+          transparent: false,
+        });
+        try {
+          await highlighter.highlightByID(styleName, codeMap, false, false);
+        } catch (e) {
+          console.warn('[BIM] Color cronograma error:', kit.codigo_kit, e);
+        }
+        cronKitColorGroupsRef.current.add(styleName);
+      }
+    })();
+  }, [colorByCronKit, multiIndex, ifcScheduleKits, timelineActive]);
+
+  // ── Apply/clear kit colors when toggle or data changes ───────────────────
+  useEffect(() => {
+    const highlighter = highlighterRef.current;
+    if (!highlighter) return;
+
+    const clearPrev = async () => {
+      for (const styleName of kitColorGroupsRef.current) {
+        try { await highlighter.clear(styleName); } catch {}
+        highlighter.styles.delete(styleName);
+      }
+      kitColorGroupsRef.current.clear();
+    };
+
+    if (!colorByKit || timelineActive) {
+      clearPrev();
+      return;
+    }
+
+    (async () => {
+      await clearPrev();
+      const kitCodeIdx = multiIndex.get('codigo_kit_actividad');
+      if (!kitCodeIdx) return;
+      for (const kit of ifcKits) {
+        if (!kit.codigo_kit || !kit.color) continue;
+        const codeMap = kitCodeIdx.get(kit.codigo_kit);
+        if (!codeMap || Object.keys(codeMap).length === 0) continue;
+        const styleName = `__kitcolor_${kit.codigo_kit}`;
+        highlighter.styles.set(styleName, {
+          color: new THREE.Color(kit.color),
+          renderedFaces: FRAGS.RenderedFaces.ONE,
+          opacity: 1,
+          transparent: false,
+        });
+        try {
+          await highlighter.highlightByID(styleName, codeMap, false, false);
+        } catch (e) {
+          console.warn('[BIM] Color kit error:', kit.codigo_kit, e);
+        }
+        kitColorGroupsRef.current.add(styleName);
+      }
+    })();
+  }, [colorByKit, multiIndex, ifcKits, timelineActive]);
+
+  // ── Timeline colors + visibility ─────────────────────────────────────────
+  useEffect(() => {
+    const highlighter = highlighterRef.current;
+    const hider = hiderRef.current;
+    if (!highlighter || !hider) return;
+
+    const clearStyles = async () => {
+      for (const sn of timelineStylesRef.current) {
+        try { await highlighter.clear(sn); } catch {}
+        highlighter.styles.delete(sn);
+      }
+      timelineStylesRef.current.clear();
+    };
+
+    if (!timelineActive || !timelineDateStr) {
+      clearStyles();
+      return;
+    }
+
+    (async () => {
+      await clearStyles();
+      const kitCodeIdx = multiIndex.get('codigo_cronograma');
+      if (!kitCodeIdx) return;
+
+      const visibleMap: OBC.ModelIdMap = {};
+
+      for (const kit of ifcScheduleKits) {
+        if (!kit.codigo_kit || !kit.fecha_inicio) continue;
+        const codeMap = kitCodeIdx.get(kit.codigo_kit);
+        if (!codeMap || Object.keys(codeMap).length === 0) continue;
+
+        if (timelineDateStr < kit.fecha_inicio) continue; // no iniciado → ocultar
+
+        for (const [modelId, ids] of Object.entries(codeMap)) {
+          if (!visibleMap[modelId]) visibleMap[modelId] = new Set<number>();
+          for (const id of (ids as Set<number>))
+            (visibleMap[modelId] as Set<number>).add(id);
+        }
+
+        const isDone = !!(kit.fecha_fin && timelineDateStr > kit.fecha_fin);
+
+        // Color original: no highlight applied, element stays with its IFC material
+        if (isDone && doneColorMode === 'original') continue;
+
+        const color   = isDone
+          ? (doneColorMode === 'uniform' ? doneUniformColor : (kit.color || '#22c55e'))
+          : '#f59e0b';
+        const styleNm = `__tl_${isDone ? 'done' : 'wip'}_${kit.codigo_kit}`;
+
+        highlighter.styles.set(styleNm, {
+          color: new THREE.Color(color),
+          renderedFaces: FRAGS.RenderedFaces.ONE,
+          opacity: 1,
+          transparent: false,
+        });
+
+        try {
+          await highlighter.highlightByID(styleNm, codeMap, false, false);
+          timelineStylesRef.current.add(styleNm);
+        } catch (e) {
+          console.warn('[Timeliner] Color error:', kit.codigo_kit, e);
+        }
+      }
+
+      try {
+        await hider.isolate(visibleMap);
+      } catch {}
+    })();
+  }, [timelineActive, timelineDateStr, multiIndex, ifcScheduleKits, doneColorMode, doneUniformColor]);
+
+  // ── Timeline animation loop ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!timelinePlaying || !timelineDateRange) return;
+    const interval = setInterval(() => {
+      setTimelineDateStr(prev => {
+        const next = addDays(prev, daysPerTick);
+        if (next >= timelineDateRange.end) {
+          setTimelinePlaying(false);
+          return timelineDateRange.end;
+        }
+        return next;
+      });
+    }, TICK_MS);
+    return () => clearInterval(interval);
+  }, [timelinePlaying, daysPerTick, timelineDateRange]);
+
   // ── Apply filter whenever filterState, multiIndex, or activityKitCodes changes
   useEffect(() => {
     const hider = hiderRef.current;
     if (!hider) return;
+    if (timelineActive) return;
     const filtered = computeFilteredMap(multiIndex, filterState, activityKitCodes.size > 0 ? activityKitCodes : null);
     (async () => {
       try {
@@ -1065,7 +1650,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
         // FragmentsManager may not be initialized yet (model still loading)
       }
     })();
-  }, [filterState, multiIndex, activityKitCodes]);
+  }, [filterState, multiIndex, activityKitCodes, timelineActive]);
 
   // ── Filter handlers ──────────────────────────────────────────────────────
   const handleToggle = useCallback((propName: string, value: string) => {
@@ -1150,6 +1735,10 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
   useEffect(() => {
     onActiveKitIdsChange?.(activeBudgetKitIds);
   }, [activeBudgetKitIds]);
+
+  useEffect(() => {
+    onTimelineUpdate?.(timelineActive && timelineDateStr ? timelineDateStr : null);
+  }, [timelineActive, timelineDateStr]);
 
   // ── Setup ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1464,11 +2053,17 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
           ifcActivities={ifcActivities}
           selectedActivityIds={selectedActivityIds}
           activityKitCodes={activityKitCodes}
+          kitColorMap={kitColorMap}
+          colorByKit={colorByKit}
+          scheduleKitColorMap={scheduleKitColorMap}
+          colorByCronKit={colorByCronKit}
           onToggle={handleToggle}
           onClearProp={handleClearProp}
           onClearAll={handleClearAll}
           onToggleActivity={handleToggleActivity}
           onClearActivities={handleClearActivities}
+          onToggleColorByKit={() => setColorByKit(p => !p)}
+          onToggleColorByCronKit={() => setColorByCronKit(p => !p)}
           onClose={() => setFilterPanelVis(false)}
         />
       ) : (
@@ -1514,16 +2109,68 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
         >⬡ Propiedades</button>
       )}
 
+      {/* Timeliner panel / toggle button */}
+      {timelinePanelVis ? (
+        <TimelinePanel
+          dateRange={timelineDateRange}
+          currentDate={timelineDateStr}
+          playing={timelinePlaying}
+          duration={timelineDuration}
+          kits={scheduleKits}
+          multiIndex={multiIndex}
+          doneColorMode={doneColorMode}
+          doneUniformColor={doneUniformColor}
+          onDateChange={d => { setTimelineDateStr(d); setTimelinePlaying(false); }}
+          onTogglePlay={() => {
+            if (!timelineDateRange) return;
+            if (timelineDateStr >= timelineDateRange.end) setTimelineDateStr(addDays(timelineDateRange.start, -1));
+            setTimelinePlaying(p => !p);
+          }}
+          onStop={() => {
+            setTimelinePlaying(false);
+            if (timelineDateRange) setTimelineDateStr(addDays(timelineDateRange.start, -1));
+          }}
+          onDurationChange={setTimelineDuration}
+          onDoneColorModeChange={setDoneColorMode}
+          onDoneUniformColorChange={setDoneUniformColor}
+          onClose={() => {
+            setTimelinePanelVis(false);
+            setTimelineActive(false);
+            setTimelinePlaying(false);
+          }}
+        />
+      ) : timelineDateRange ? (
+        <button
+          onClick={() => {
+            setTimelinePanelVis(true);
+            setTimelineActive(true);
+            if (!timelineDateStr && timelineDateRange) setTimelineDateStr(addDays(timelineDateRange.start, -1));
+          }}
+          style={{
+            position: 'absolute', bottom: '44px', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 1000, background: 'rgba(15,17,23,0.85)',
+            border: '1px solid rgba(245,158,11,0.3)', borderRadius: '8px',
+            color: '#f59e0b', cursor: 'pointer', padding: '6px 14px', fontSize: 12,
+            backdropFilter: 'blur(8px)', fontFamily: '"IBM Plex Mono",monospace',
+            letterSpacing: '0.06em',
+          }}
+        >
+          ◷ Timeliner
+        </button>
+      ) : null}
+
       {/* Status bar */}
       <div style={{
         position:'absolute', bottom:'16px', left:'50%', transform:'translateX(-50%)',
-        backgroundColor:'rgba(15,17,23,0.7)', color:'#94a3b8', fontSize:11,
+        backgroundColor:'rgba(15,17,23,0.7)', color: timelineActive ? '#f59e0b' : '#94a3b8', fontSize:11,
         padding:'5px 12px', borderRadius:20, backdropFilter:'blur(8px)',
         pointerEvents:'none', fontFamily:'"IBM Plex Mono",monospace',
         letterSpacing:'0.05em', zIndex:999, whiteSpace:'nowrap',
         maxWidth:'60%', overflow:'hidden', textOverflow:'ellipsis',
       }}>
-        {statusText}
+        {timelineActive
+          ? `◷ Timeliner activo · ${fmtDateES(timelineDateStr)}`
+          : statusText}
       </div>
     </div>
   );

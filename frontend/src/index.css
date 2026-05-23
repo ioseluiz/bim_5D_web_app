@@ -1,6 +1,155 @@
+/* ─── Brand Colors ────────────────────────────────────────────────────────── */
+
+:root {
+  --brand-navy: #154b75;
+  --brand-navy-dark: #123f63;
+  --brand-navy-darker: #0f3554;
+  --brand-red: #ac2b37;
+  --brand-red-dark: #92242f;
+  --brand-red-darker: #7e1f29;
+
+  /* Bootstrap primary → navy */
+  --bs-primary: #154b75;
+  --bs-primary-rgb: 21, 75, 117;
+
+  /* Links */
+  --bs-link-color: #154b75;
+  --bs-link-color-rgb: 21, 75, 117;
+  --bs-link-hover-color: #123f63;
+  --bs-link-hover-color-rgb: 18, 63, 99;
+}
+
+/* ─── btn-primary (navy) ──────────────────────────────────────────────────── */
+
+.btn-primary {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: #154b75;
+  --bs-btn-border-color: #154b75;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: #123f63;
+  --bs-btn-hover-border-color: #103a5c;
+  --bs-btn-focus-shadow-rgb: 21, 75, 117;
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: #103a5c;
+  --bs-btn-active-border-color: #0e3554;
+  --bs-btn-disabled-color: #fff;
+  --bs-btn-disabled-bg: #154b75;
+  --bs-btn-disabled-border-color: #154b75;
+}
+
+.btn-outline-primary {
+  --bs-btn-color: #154b75;
+  --bs-btn-border-color: #154b75;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: #154b75;
+  --bs-btn-hover-border-color: #154b75;
+  --bs-btn-focus-shadow-rgb: 21, 75, 117;
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: #154b75;
+  --bs-btn-active-border-color: #154b75;
+  --bs-btn-disabled-color: #154b75;
+  --bs-btn-disabled-border-color: #154b75;
+}
+
+/* ─── btn-success (verde presupuesto — tono que armoniza con navy) ──────────── */
+
+.btn-success {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: #1a7a52;
+  --bs-btn-border-color: #1a7a52;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: #156644;
+  --bs-btn-hover-border-color: #135f3f;
+  --bs-btn-focus-shadow-rgb: 26, 122, 82;
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: #135f3f;
+  --bs-btn-active-border-color: #11583a;
+  --bs-btn-disabled-color: #fff;
+  --bs-btn-disabled-bg: #1a7a52;
+  --bs-btn-disabled-border-color: #1a7a52;
+}
+
+.btn-outline-success {
+  --bs-btn-color: #1a7a52;
+  --bs-btn-border-color: #1a7a52;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: #1a7a52;
+  --bs-btn-hover-border-color: #1a7a52;
+  --bs-btn-focus-shadow-rgb: 26, 122, 82;
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: #1a7a52;
+  --bs-btn-active-border-color: #1a7a52;
+  --bs-btn-disabled-color: #1a7a52;
+  --bs-btn-disabled-border-color: #1a7a52;
+}
+
+/* ─── Utility classes ─────────────────────────────────────────────────────── */
+
+.bg-primary    { background-color: #154b75 !important; }
+.text-primary  { color: #154b75 !important; }
+.border-primary { border-color: #154b75 !important; }
+
+.bg-success    { background-color: #1a7a52 !important; }
+.text-success  { color: #1a7a52 !important; }
+.border-success { border-color: #1a7a52 !important; }
+
+.badge.bg-primary { background-color: #154b75 !important; }
+.badge.bg-success { background-color: #1a7a52 !important; }
+
+.bg-success.bg-opacity-10 { background-color: rgba(26, 122, 82, 0.10) !important; }
+
+/* ─── List group active ───────────────────────────────────────────────────── */
+
+.list-group-item.active {
+  background-color: #154b75;
+  border-color: #154b75;
+}
+
+/* ─── Navbar brand ────────────────────────────────────────────────────────── */
+
+.navbar-navy {
+  background-color: #154b75 !important;
+}
+
+.navbar-navy .navbar-brand,
+.navbar-navy .nav-link {
+  color: rgba(255, 255, 255, 0.88);
+  transition: color 0.15s;
+}
+
+.navbar-navy .navbar-brand:hover,
+.navbar-navy .nav-link:hover,
+.navbar-navy .nav-link:focus {
+  color: #fff;
+}
+
+.navbar-navy .nav-link.active {
+  color: #fff;
+  font-weight: 600;
+  border-bottom: 2px solid #ac2b37;
+  padding-bottom: 2px;
+}
+
+.navbar-navy .navbar-toggler {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.navbar-navy .navbar-toggler-icon {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255%2C255%2C255%2C0.8%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+}
+
+/* ─── General ─────────────────────────────────────────────────────────────── */
+
 body {
   background-color: #f8f9fa;
   color: #212529;
+  font-family: 'Source Sans 3', 'Myriad Pro', 'Segoe UI', sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6,
+.navbar-brand, .btn, .badge,
+.nav-link, .form-control, .form-select {
+  font-family: 'Source Sans 3', 'Myriad Pro', 'Segoe UI', sans-serif;
 }
 
 .card {
@@ -14,9 +163,4 @@ body {
 
 .navbar-brand {
   letter-spacing: 1px;
-}
-
-.list-group-item.active {
-  background-color: #0d6efd;
-  border-color: #0d6efd;
 }

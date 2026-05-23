@@ -43,6 +43,7 @@ interface ActivityKit {
   codigo_kit: string;
   nombre: string;
   descripcion: string;
+  color?: string;
   kit_activities: KitActivity[];
 }
 
@@ -93,7 +94,7 @@ const ActivityKitList = () => {
   // Kit modal
   const [showKitModal, setShowKitModal] = useState(false);
   const [currentKit, setCurrentKit] = useState<ActivityKit | null>(null);
-  const [kitForm, setKitForm] = useState({ codigo_kit: '', nombre: '', descripcion: '' });
+  const [kitForm, setKitForm] = useState({ codigo_kit: '', nombre: '', descripcion: '', color: '#3b82f6' });
   const [savingKit, setSavingKit] = useState(false);
 
   // Inline activity form
@@ -154,7 +155,7 @@ const ActivityKitList = () => {
 
   const openNewKit = () => {
     setCurrentKit(null);
-    setKitForm({ codigo_kit: '', nombre: '', descripcion: '' });
+    setKitForm({ codigo_kit: '', nombre: '', descripcion: '', color: '#3b82f6' });
     setActivityForm(null);
     setEditingActivityId(null);
     setShowKitModal(true);
@@ -162,7 +163,7 @@ const ActivityKitList = () => {
 
   const openEditKit = (kit: ActivityKit) => {
     setCurrentKit(kit);
-    setKitForm({ codigo_kit: kit.codigo_kit || '', nombre: kit.nombre, descripcion: kit.descripcion || '' });
+    setKitForm({ codigo_kit: kit.codigo_kit || '', nombre: kit.nombre, descripcion: kit.descripcion || '', color: kit.color || '#3b82f6' });
     setActivityForm(null);
     setEditingActivityId(null);
     setShowKitModal(true);
@@ -172,7 +173,7 @@ const ActivityKitList = () => {
     e.preventDefault();
     setSavingKit(true);
     try {
-      const data = { codigo_kit: kitForm.codigo_kit || null, nombre: kitForm.nombre, descripcion: kitForm.descripcion };
+      const data = { codigo_kit: kitForm.codigo_kit || null, nombre: kitForm.nombre, descripcion: kitForm.descripcion, color: kitForm.color };
       if (currentKit) {
         const res = await axios.put(`http://localhost:8000/api/activity-kits/${currentKit.id}/`, data);
         setCurrentKit(res.data);
@@ -417,9 +418,19 @@ const ActivityKitList = () => {
               <div className="card-header bg-white py-3 d-flex justify-content-between align-items-start">
                 <div>
                   {kit.codigo_kit && (
-                    <span className="badge bg-dark font-monospace mb-1 d-inline-block" style={{ letterSpacing: '0.05em' }}>
-                      {kit.codigo_kit}
-                    </span>
+                    <div className="d-flex align-items-center gap-2 mb-1">
+                      <span
+                        style={{
+                          width: 12, height: 12, borderRadius: '50%',
+                          backgroundColor: kit.color || '#3b82f6',
+                          border: '2px solid rgba(0,0,0,0.1)',
+                          display: 'inline-block', flexShrink: 0,
+                        }}
+                      />
+                      <span className="badge bg-dark font-monospace" style={{ letterSpacing: '0.05em' }}>
+                        {kit.codigo_kit}
+                      </span>
+                    </div>
                   )}
                   <h5 className="mb-0 fw-bold text-dark">{kit.nombre}</h5>
                 </div>
@@ -524,7 +535,7 @@ const ActivityKitList = () => {
                         />
                       </div>
 
-                      <div className="mb-4">
+                      <div className="mb-3">
                         <label className="form-label fw-semibold small text-muted">Descripción</label>
                         <textarea
                           className="form-control"
@@ -533,6 +544,33 @@ const ActivityKitList = () => {
                           onChange={e => setKitForm(p => ({ ...p, descripcion: e.target.value }))}
                           placeholder="Descripción opcional…"
                         />
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="form-label fw-semibold small">Color del Kit</label>
+                        <div className="d-flex align-items-center gap-2">
+                          <input
+                            type="color"
+                            className="form-control form-control-color"
+                            value={kitForm.color}
+                            onChange={e => setKitForm(p => ({ ...p, color: e.target.value }))}
+                            title="Seleccionar color"
+                            style={{ width: 44, height: 36, padding: 2, cursor: 'pointer' }}
+                          />
+                          <input
+                            type="text"
+                            className="form-control form-control-sm font-monospace"
+                            value={kitForm.color}
+                            onChange={e => {
+                              const v = e.target.value;
+                              if (/^#[0-9a-fA-F]{0,6}$/.test(v)) setKitForm(p => ({ ...p, color: v }));
+                            }}
+                            maxLength={7}
+                            placeholder="#3b82f6"
+                            style={{ width: 90 }}
+                          />
+                          <small className="text-muted">Visible en el visor BIM</small>
+                        </div>
                       </div>
 
                       <button type="submit" className="btn btn-primary w-100 fw-bold" disabled={savingKit}>

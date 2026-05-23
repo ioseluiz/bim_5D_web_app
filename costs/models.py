@@ -61,6 +61,7 @@ class ActivityKit(models.Model):
     codigo_kit = models.CharField(max_length=50, unique=True, null=True, blank=True, verbose_name="Código del Kit")
     nombre = models.CharField(max_length=255, verbose_name="Nombre del Kit")
     descripcion = models.TextField(blank=True, null=True, verbose_name="Descripción")
+    color = models.CharField(max_length=9, blank=True, default='#3b82f6', verbose_name="Color del Kit")
     proyecto = models.ForeignKey(
         'bim.Project',
         on_delete=models.CASCADE,

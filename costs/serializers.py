@@ -35,7 +35,7 @@ class ActivityKitSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ActivityKit
-        fields = ['id', 'codigo_kit', 'nombre', 'descripcion', 'proyecto', 'kit_activities']
+        fields = ['id', 'codigo_kit', 'nombre', 'descripcion', 'color', 'proyecto', 'kit_activities']
 
     def create(self, validated_data):
         return ActivityKit.objects.create(**validated_data)
@@ -44,6 +44,7 @@ class ActivityKitSerializer(serializers.ModelSerializer):
         instance.codigo_kit = validated_data.get('codigo_kit', instance.codigo_kit)
         instance.nombre = validated_data.get('nombre', instance.nombre)
         instance.descripcion = validated_data.get('descripcion', instance.descripcion)
+        instance.color = validated_data.get('color', instance.color)
         if 'proyecto' in validated_data:
             instance.proyecto = validated_data['proyecto']
         instance.save()

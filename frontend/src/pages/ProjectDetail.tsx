@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import BimViewer from '../components/BimViewer';
+import GanttSection from '../components/GanttSection';
 
 interface BIMModel {
   id: number;
@@ -55,6 +56,16 @@ const ProjectDetail = () => {
 
   // Budget summary state
   const [activeKitIds,  setActiveKitIds]  = useState<Set<number> | null>(null);
+  const [activePanel,   setActivePanel]   = useState<'budget' | 'gantt'>('budget');
+  const [timelineDate,  setTimelineDate]  = useState<string | null>(null);
+
+  // Auto-switch to Gantt tab only when timeliner first activates
+  const handleTimelineUpdate = (date: string | null) => {
+    setTimelineDate(prev => {
+      if (!prev && date) setActivePanel('gantt'); // switch tab only on activation
+      return date;
+    });
+  };
   const [masterKits,    setMasterKits]    = useState<KitSummary[]>([]);
   const [budgetItems,   setBudgetItems]   = useState<BudgetItem[]>([]);
   const [loadingBudget, setLoadingBudget] = useState(false);
@@ -309,14 +320,16 @@ const ProjectDetail = () => {
           </div>
         </div>
 
-        <div className="col-lg-9">
-          <div className="card shadow-sm border-0 bg-dark rounded-3 overflow-hidden" style={{ height: '78vh', position: 'relative' }}>
+        <div className="col-lg-9 d-flex flex-column gap-2">
+          {/* ── Visor BIM ── */}
+          <div className="card shadow-sm border-0 bg-dark rounded-3 overflow-hidden" style={{ height: '54vh', position: 'relative' }}>
             {selectedModel ? (
               <BimViewer
                 ifcUrl={selectedModel.archivo}
                 projectId={id}
                 onElementSelect={handleElementSelect}
                 onActiveKitIdsChange={setActiveKitIds}
+                onTimelineUpdate={handleTimelineUpdate}
               />
             ) : (
               <div className="h-100 d-flex flex-column align-items-center justify-content-center bg-light text-muted border border-dashed rounded-3">
@@ -333,50 +346,74 @@ const ProjectDetail = () => {
               </div>
             )}
           </div>
-        </div>
-      </div>
 
-      {/* ── Resumen de Presupuesto ── */}
-      <div className="row mt-3">
-        <div className="col-12">
-          <div className="card shadow-sm border-0">
-            <div className="card-header d-flex justify-content-between align-items-center bg-success text-white py-2 px-3">
-              <span className="fw-bold small">
-                <i className="bi bi-table me-2" />Resumen de Presupuesto
-              </span>
-              <div className="d-flex align-items-center gap-2">
-                {activeKitIds && activeKitIds.size > 0 && (
-                  <span className="badge bg-white text-success fw-bold">
-                    <i className="bi bi-funnel-fill me-1" />
-                    {activeKitIds.size} kit{activeKitIds.size !== 1 ? 's' : ''} filtrado{activeKitIds.size !== 1 ? 's' : ''} desde el visor
-                  </span>
+          {/* ── Panel de tabs: Presupuesto | Gantt ── */}
+          <div className="card shadow-sm border-0 d-flex flex-column" style={{ height: '30vh', minHeight: 240 }}>
+            {/* Tab headers */}
+            <div className="d-flex align-items-center border-bottom bg-white px-2 pt-1" style={{ flexShrink: 0 }}>
+              <ul className="nav nav-tabs border-0">
+                <li className="nav-item">
+                  <button
+                    className={`nav-link py-2 px-3 border-0 ${activePanel === 'budget' ? 'active fw-semibold' : 'text-muted'}`}
+                    onClick={() => setActivePanel('budget')}
+                  >
+                    <i className="bi bi-table me-2 text-success" />
+                    Presupuesto
+                    {activeKitIds && activeKitIds.size > 0 && (
+                      <span className="badge bg-success ms-2" style={{ fontSize: 10 }}>
+                        {activeKitIds.size} filtrado{activeKitIds.size !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </button>
+                </li>
+                <li className="nav-item">
+                  <button
+                    className={`nav-link py-2 px-3 border-0 ${activePanel === 'gantt' ? 'active fw-semibold' : 'text-muted'}`}
+                    onClick={() => setActivePanel('gantt')}
+                  >
+                    <i className="bi bi-bar-chart-steps me-2 text-primary" />
+                    Gantt de Cronograma
+                  </button>
+                </li>
+              </ul>
+              <div className="ms-auto pe-2">
+                {activePanel === 'budget' && (
+                  <Link to={`/projects/${id}/budget`} className="btn btn-sm btn-outline-success py-0 px-2" style={{ fontSize: '0.75rem' }}>
+                    Ver completo →
+                  </Link>
                 )}
-                <Link to={`/projects/${id}/budget`} className="btn btn-sm btn-outline-light py-0 px-2" style={{ fontSize: '0.75rem' }}>
-                  Ver presupuesto completo →
-                </Link>
+                {activePanel === 'gantt' && id && (
+                  <Link to={`/projects/${id}/schedule`} className="btn btn-sm btn-outline-primary py-0 px-2" style={{ fontSize: '0.75rem' }}>
+                    Gestionar →
+                  </Link>
+                )}
               </div>
             </div>
-            <div className="card-body p-0">
-              {loadingBudget ? (
-                <div className="text-center py-4">
-                  <span className="spinner-border spinner-border-sm text-success me-2" />
-                  <span className="text-muted small">Cargando presupuesto…</span>
-                </div>
-              ) : budgetByKit.length === 0 ? (
-                <div className="text-center py-4 text-muted small">
-                  <i className="bi bi-info-circle me-1" />
-                  No hay presupuesto definido.{' '}
-                  <Link to={`/projects/${id}/budget`}>Ir al presupuesto</Link> para sincronizarlo desde el IFC.
-                </div>
-              ) : (
-                <div className="table-responsive">
+
+            {/* Tab content */}
+            <div style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1 }}>
+
+              {/* ── Presupuesto ── */}
+              {activePanel === 'budget' && (
+                loadingBudget ? (
+                  <div className="text-center py-4">
+                    <span className="spinner-border spinner-border-sm text-success me-2" />
+                    <span className="text-muted small">Cargando presupuesto…</span>
+                  </div>
+                ) : budgetByKit.length === 0 ? (
+                  <div className="text-center py-4 text-muted small">
+                    <i className="bi bi-info-circle me-1" />
+                    No hay presupuesto definido.{' '}
+                    <Link to={`/projects/${id}/budget`}>Ir al presupuesto</Link> para sincronizarlo desde el IFC.
+                  </div>
+                ) : (
                   <table className="table table-sm table-hover mb-0">
-                    <thead className="table-light">
+                    <thead className="table-light sticky-top">
                       <tr>
                         <th className="ps-3" style={{ width: 110 }}>Código Kit</th>
                         <th>Kit de Costos</th>
                         <th className="text-center" style={{ width: 100 }}>Actividades</th>
-                        <th className="text-end pe-3" style={{ width: 150 }}>Costo Total</th>
+                        <th className="text-end pe-3" style={{ width: 160 }}>Costo Total</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -397,7 +434,7 @@ const ProjectDetail = () => {
                       })}
                     </tbody>
                     <tfoot>
-                      <tr className="table-success">
+                      <tr className="table-success sticky-bottom">
                         <td colSpan={3} className="ps-3 fw-bold small">
                           {activeKitIds && activeKitIds.size > 0 ? 'Subtotal filtrado' : 'Total General'}
                         </td>
@@ -408,15 +445,19 @@ const ProjectDetail = () => {
                       {activeKitIds && activeKitIds.size > 0 && (
                         <tr className="table-light">
                           <td colSpan={3} className="ps-3 text-muted small">Total proyecto</td>
-                          <td className="text-end pe-3 text-muted small font-monospace">
-                            ${fmtBudget(allBudgetTotal)}
-                          </td>
+                          <td className="text-end pe-3 text-muted small font-monospace">${fmtBudget(allBudgetTotal)}</td>
                         </tr>
                       )}
                     </tfoot>
                   </table>
-                </div>
+                )
               )}
+
+              {/* ── Gantt ── */}
+              {activePanel === 'gantt' && id && (
+                <GanttSection projectId={id} panel timelineDate={timelineDate} />
+              )}
+
             </div>
           </div>
         </div>

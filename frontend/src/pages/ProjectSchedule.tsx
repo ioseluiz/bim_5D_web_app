@@ -47,6 +47,8 @@ interface ScheduleKit {
   nombre: string;
   descripcion: string;
   proyecto: number | null;
+  fecha_inicio?: string | null;
+  fecha_fin?: string | null;
   kit_actividades: KitActivity[];
 }
 
@@ -172,11 +174,25 @@ const ProjectSchedule = () => {
     });
   }, [allActivitiesForKit, kitSearch, kitFaseFilter, kitDivisionFilter]);
 
-  // Only show kits whose codigo_kit appears as codigo_cronograma in the IFC model
+  // Kits to display: project kits matching IFC codes + master kits matching IFC codes not already in project
   const filteredProjectKits = useMemo(() => {
-    if (!ifcScheduleCodes || ifcScheduleCodes.size === 0) return projectKits;
-    return projectKits.filter(k => k.codigo_kit && ifcScheduleCodes.has(k.codigo_kit));
-  }, [projectKits, ifcScheduleCodes]);
+    const projectCodes = new Set(projectKits.map(k => k.codigo_kit));
+
+    if (!ifcScheduleCodes || ifcScheduleCodes.size === 0) {
+      // No IFC data: show all project kits without filter
+      return projectKits.map(k => ({ ...k, _isMaster: false }));
+    }
+
+    const projMatching = projectKits
+      .filter(k => k.codigo_kit && ifcScheduleCodes.has(k.codigo_kit))
+      .map(k => ({ ...k, _isMaster: false }));
+
+    const masterMatching = masterKits
+      .filter(k => k.codigo_kit && ifcScheduleCodes.has(k.codigo_kit) && !projectCodes.has(k.codigo_kit))
+      .map(k => ({ ...k, _isMaster: true }));
+
+    return [...projMatching, ...masterMatching];
+  }, [projectKits, masterKits, ifcScheduleCodes]);
 
   const masterKitsNotCopied = useMemo(() => {
     const copiedCodes = new Set(projectKits.map(k => k.codigo_kit));
@@ -410,15 +426,18 @@ const ProjectSchedule = () => {
             <div className="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3">
               <i className="bi bi-exclamation-triangle"></i>
               <span className="small">
-                No se encontraron datos del modelo IFC. Abra el <strong>Visor BIM</strong> del proyecto para escanear el modelo y filtrar los kits por <code>codigo_cronograma</code>.
+                No se encontraron datos del modelo IFC. Abra el <strong>Visor BIM</strong> del proyecto para escanear el modelo.
               </span>
             </div>
           ) : ifcScheduleCodes.size > 0 ? (
             <div className="alert alert-success d-flex align-items-center gap-2 py-2 mb-3">
               <i className="bi bi-funnel-fill"></i>
               <span className="small">
-                Mostrando <strong>{filteredProjectKits.length}</strong> de {projectKits.length} kit{projectKits.length !== 1 ? 's' : ''} presentes en el modelo IFC
-                {' '}(<strong>{ifcScheduleCodes.size}</strong> código{ifcScheduleCodes.size !== 1 ? 's' : ''} <code>codigo_cronograma</code> detectados).
+                <strong>{ifcScheduleCodes.size}</strong> código{ifcScheduleCodes.size !== 1 ? 's' : ''} <code>codigo_cronograma</code> detectados en el IFC.
+                Mostrando <strong>{filteredProjectKits.length}</strong> kit{filteredProjectKits.length !== 1 ? 's' : ''}.
+                {filteredProjectKits.some(k => k._isMaster) && (
+                  <> · <span className="badge bg-secondary ms-1">Maestro</span> = del catálogo, sin copiar al proyecto.</>
+                )}
               </span>
             </div>
           ) : (
@@ -442,19 +461,32 @@ const ProjectSchedule = () => {
                 <div className="card-header d-flex justify-content-between align-items-center bg-success bg-opacity-10">
                   <div className="fw-bold">
                     <span className="badge bg-success me-2">{kit.codigo_kit || '—'}</span>
+                    {kit._isMaster && (
+                      <span className="badge bg-secondary me-2" style={{ fontSize: 10 }}>Maestro</span>
+                    )}
                     {kit.nombre}
                     <small className="text-muted fw-normal ms-2">
                       ({kit.kit_actividades.length} actividad{kit.kit_actividades.length !== 1 ? 'es' : ''})
                     </small>
+                    {(kit.fecha_inicio || kit.fecha_fin) && (
+                      <small className="text-muted fw-normal ms-3">
+                        <i className="bi bi-calendar3 me-1"></i>
+                        {kit.fecha_inicio ? new Date(kit.fecha_inicio + 'T12:00:00').toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' }) : '?'}
+                        {' → '}
+                        {kit.fecha_fin ? new Date(kit.fecha_fin + 'T12:00:00').toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' }) : '?'}
+                      </small>
+                    )}
                   </div>
-                  <div className="d-flex gap-2">
-                    <button className="btn btn-sm btn-outline-primary" onClick={() => handleOpenKitModal(kit)}>
-                      <i className="bi bi-pencil me-1"></i>Editar
-                    </button>
-                    <button className="btn btn-sm btn-outline-danger" onClick={() => handleDeleteKit(kit.id)}>
-                      <i className="bi bi-trash"></i>
-                    </button>
-                  </div>
+                  {!kit._isMaster && (
+                    <div className="d-flex gap-2">
+                      <button className="btn btn-sm btn-outline-primary" onClick={() => handleOpenKitModal(kit)}>
+                        <i className="bi bi-pencil me-1"></i>Editar
+                      </button>
+                      <button className="btn btn-sm btn-outline-danger" onClick={() => handleDeleteKit(kit.id)}>
+                        <i className="bi bi-trash"></i>
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="card-body p-0">
                   <div className="table-responsive">

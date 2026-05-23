@@ -1,7 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
-
-const API = 'http://localhost:8000/api';
+import api from '../api';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -145,9 +143,9 @@ const ScheduleKitList = () => {
   const fetchAll = async () => {
     try {
       const [kitsRes, activitiesRes, divisionsRes] = await Promise.all([
-        axios.get(`${API}/schedule-kits/`),
-        axios.get(`${API}/schedule-activities/`),
-        axios.get(`${API}/masterformat/`),
+        api.get(`/schedule-kits/`),
+        api.get(`/schedule-activities/`),
+        api.get(`/masterformat/`),
       ]);
       setKits(kitsRes.data);
       setMasterActivities(activitiesRes.data);
@@ -160,7 +158,7 @@ const ScheduleKitList = () => {
   };
 
   const refreshCurrentKit = async (kitId: number) => {
-    const res = await axios.get(`${API}/schedule-kits/${kitId}/`);
+    const res = await api.get(`/schedule-kits/${kitId}/`);
     setCurrentKit(res.data);
     setKits(prev => prev.map(k => k.id === kitId ? res.data : k));
   };
@@ -189,11 +187,11 @@ const ScheduleKitList = () => {
     try {
       const data = { codigo_kit: kitForm.codigo_kit || null, nombre: kitForm.nombre, descripcion: kitForm.descripcion, color: kitForm.color };
       if (currentKit) {
-        const res = await axios.put(`${API}/schedule-kits/${currentKit.id}/`, data);
+        const res = await api.put(`/schedule-kits/${currentKit.id}/`, data);
         setCurrentKit(res.data);
         setKits(prev => prev.map(k => k.id === currentKit.id ? res.data : k));
       } else {
-        const res = await axios.post(`${API}/schedule-kits/`, data);
+        const res = await api.post(`/schedule-kits/`, data);
         setCurrentKit(res.data);
         setKits(prev => [...prev, res.data]);
       }
@@ -208,7 +206,7 @@ const ScheduleKitList = () => {
   const handleDeleteKit = async (id: number) => {
     if (!window.confirm('¿Eliminar este kit y todas sus actividades?')) return;
     try {
-      await axios.delete(`${API}/schedule-kits/${id}/`);
+      await api.delete(`/schedule-kits/${id}/`);
       setKits(prev => prev.filter(k => k.id !== id));
     } catch (err) {
       console.error(err);
@@ -261,9 +259,9 @@ const ScheduleKitList = () => {
         division: activityForm.division ? parseInt(activityForm.division) : null,
       };
       if (editingActivityId) {
-        await axios.patch(`${API}/schedule-activities/${editingActivityId}/`, payload);
+        await api.patch(`/schedule-activities/${editingActivityId}/`, payload);
       } else {
-        await axios.post(`${API}/schedule-kits/${currentKit.id}/add_actividad/`, payload);
+        await api.post(`/schedule-kits/${currentKit.id}/add_actividad/`, payload);
       }
       await refreshCurrentKit(currentKit.id);
       setActivityForm(null);
@@ -279,7 +277,7 @@ const ScheduleKitList = () => {
   const handleDeleteActivity = async (actId: number) => {
     if (!currentKit || !window.confirm('¿Eliminar esta actividad del kit?')) return;
     try {
-      await axios.delete(`${API}/schedule-activities/${actId}/`);
+      await api.delete(`/schedule-activities/${actId}/`);
       setCurrentKit(prev => prev ? { ...prev, kit_actividades: prev.kit_actividades.filter(a => a.id !== actId) } : prev);
       setKits(prev => prev.map(k => k.id === currentKit.id
         ? { ...k, kit_actividades: k.kit_actividades.filter(a => a.id !== actId) }
@@ -313,7 +311,7 @@ const ScheduleKitList = () => {
     if (!currentKit || selectedMasterIds.size === 0) return;
     setImporting(true);
     try {
-      await axios.post(`${API}/schedule-kits/${currentKit.id}/import_actividades/`, {
+      await api.post(`/schedule-kits/${currentKit.id}/import_actividades/`, {
         actividad_ids: [...selectedMasterIds],
       });
       await refreshCurrentKit(currentKit.id);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 import BimViewer from '../components/BimViewer';
 import GanttSection from '../components/GanttSection';
 
@@ -76,7 +76,7 @@ const ProjectDetail = () => {
 
   const fetchProject = async () => {
     try {
-      const res = await axios.get(`http://localhost:8000/api/projects/${id}/`);
+      const res = await api.get(`/projects/${id}/`);
       setProject(res.data);
       // Mantener el modelo seleccionado si aún existe, o seleccionar el primero
       if (res.data.bim_models.length > 0) {
@@ -96,15 +96,13 @@ const ProjectDetail = () => {
   // Fetch kits and budget whenever project id changes
   useEffect(() => {
     if (!id) return;
-    fetch('http://localhost:8000/api/activity-kits/')
-      .then(r => r.json())
-      .then(setMasterKits)
+    api.get('/activity-kits/')
+      .then(r => setMasterKits(r.data))
       .catch(console.error);
 
     setLoadingBudget(true);
-    fetch(`http://localhost:8000/api/budget-items/?proyecto=${id}`)
-      .then(r => r.json())
-      .then((data: BudgetItem[]) => { setBudgetItems(data); setLoadingBudget(false); })
+    api.get(`/budget-items/?proyecto=${id}`)
+      .then(r => { setBudgetItems(r.data); setLoadingBudget(false); })
       .catch(() => setLoadingBudget(false));
   }, [id]);
 
@@ -155,7 +153,7 @@ const ProjectDetail = () => {
     formData.append('archivo', uploadData.archivo);
 
     try {
-      await axios.post('http://localhost:8000/api/bim-models/', formData, {
+      await api.post('/bim-models/', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -174,7 +172,7 @@ const ProjectDetail = () => {
   const handleDeleteModel = async (modelId: number) => {
     if (window.confirm('¿Desea eliminar este modelo BIM?')) {
       try {
-        await axios.delete(`http://localhost:8000/api/bim-models/${modelId}/`);
+        await api.delete(`/bim-models/${modelId}/`);
         fetchProject();
       } catch (err) {
         console.error(err);

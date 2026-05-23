@@ -14,18 +14,27 @@ class ActividadCronogramaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         if self.action not in ('list',):
-            return ActividadCronograma.objects.select_related('division').all()
+            return (
+                ActividadCronograma.objects.filter(proyecto__owner=self.request.user) |
+                ActividadCronograma.objects.filter(proyecto__isnull=True)
+            ).select_related('division')
 
         proyecto_id = self.request.query_params.get('proyecto')
         include_master = self.request.query_params.get('include_master', 'false').lower() == 'true'
 
         if proyecto_id:
-            qs = ActividadCronograma.objects.filter(proyecto_id=proyecto_id)
+            qs = ActividadCronograma.objects.filter(
+                proyecto_id=proyecto_id,
+                proyecto__owner=self.request.user,
+            )
             if include_master:
                 qs = (
                     ActividadCronograma.objects.filter(
                         proyecto__isnull=True, kit_cronograma__isnull=True
-                    ) | ActividadCronograma.objects.filter(proyecto_id=proyecto_id)
+                    ) | ActividadCronograma.objects.filter(
+                        proyecto_id=proyecto_id,
+                        proyecto__owner=self.request.user,
+                    )
                 )
             return qs.select_related('division')
 
@@ -39,13 +48,19 @@ class KitCronogramaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         if self.action not in ('list',):
-            return KitCronograma.objects.prefetch_related('kit_actividades__division').all()
+            return (
+                KitCronograma.objects.filter(proyecto__owner=self.request.user) |
+                KitCronograma.objects.filter(proyecto__isnull=True)
+            ).prefetch_related('kit_actividades__division')
 
         proyecto_id = self.request.query_params.get('proyecto')
         if proyecto_id:
             return KitCronograma.objects.filter(
-                proyecto_id=proyecto_id
+                proyecto_id=proyecto_id,
+                proyecto__owner=self.request.user,
             ).prefetch_related('kit_actividades__division')
+
+        # Master kits (no project) — visible to all authenticated users
         return KitCronograma.objects.filter(
             proyecto__isnull=True
         ).prefetch_related('kit_actividades__division')
@@ -71,10 +86,7 @@ class KitCronogramaViewSet(viewsets.ModelViewSet):
                     data.setdefault('division', master.division_id)
                 data['base_actividad'] = master.id
             except ActividadCronograma.DoesNotExist:
-                return Response(
-                    {'error': 'Actividad base no encontrada.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                return Response({'error': 'Actividad base no encontrada.'}, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = KitActividadCronogramaSerializer(data=data)
         if serializer.is_valid():
@@ -87,10 +99,7 @@ class KitCronogramaViewSet(viewsets.ModelViewSet):
         kit = self.get_object()
         master_ids = request.data.get('actividad_ids', [])
         if not master_ids:
-            return Response(
-                {'error': 'Se requiere actividad_ids.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({'error': 'Se requiere actividad_ids.'}, status=status.HTTP_400_BAD_REQUEST)
 
         created = []
         for master_id in master_ids:
@@ -121,10 +130,7 @@ class KitCronogramaViewSet(viewsets.ModelViewSet):
         master_kit = self.get_object()
         proyecto_id = request.data.get('proyecto')
         if not proyecto_id:
-            return Response(
-                {'error': 'Se requiere el ID del proyecto.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({'error': 'Se requiere el ID del proyecto.'}, status=status.HTTP_400_BAD_REQUEST)
 
         new_kit = KitCronograma.objects.create(
             codigo_kit=master_kit.codigo_kit,
@@ -146,5 +152,4 @@ class KitCronogramaViewSet(viewsets.ModelViewSet):
                 base_actividad=act.base_actividad,
             )
 
-        serializer = KitCronogramaSerializer(new_kit)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(KitCronogramaSerializer(new_kit).data, status=status.HTTP_201_CREATED)

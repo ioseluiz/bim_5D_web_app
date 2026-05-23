@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api';
 import { Link } from 'react-router-dom';
 
 interface Project {
@@ -26,7 +26,7 @@ const ProjectList = () => {
 
   const fetchProjects = async () => {
     try {
-      const res = await axios.get('http://localhost:8000/api/projects/');
+      const res = await api.get('/projects/');
       setProjects(res.data);
       setLoading(false);
     } catch (err) {
@@ -63,9 +63,9 @@ const ProjectList = () => {
     e.preventDefault();
     try {
       if (isEditing && currentProjectId) {
-        await axios.put(`http://localhost:8000/api/projects/${currentProjectId}/`, formData);
+        await api.put(`/projects/${currentProjectId}/`, formData);
       } else {
-        await axios.post('http://localhost:8000/api/projects/', formData);
+        await api.post('/projects/', formData);
       }
       setShowModal(false);
       fetchProjects();
@@ -78,7 +78,7 @@ const ProjectList = () => {
   const handleDelete = async (id: number) => {
     if (window.confirm('¿Está seguro de que desea eliminar este proyecto? Se eliminarán todos los modelos asociados.')) {
       try {
-        await axios.delete(`http://localhost:8000/api/projects/${id}/`);
+        await api.delete(`/projects/${id}/`);
         fetchProjects();
       } catch (err) {
         console.error(err);

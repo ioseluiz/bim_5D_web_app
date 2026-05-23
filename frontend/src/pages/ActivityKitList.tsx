@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
+import api from '../api';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -131,9 +131,9 @@ const ActivityKitList = () => {
   const fetchAll = async () => {
     try {
       const [kitsRes, activitiesRes, divisionsRes] = await Promise.all([
-        axios.get('http://localhost:8000/api/activity-kits/'),
-        axios.get('http://localhost:8000/api/activities/'),
-        axios.get('http://localhost:8000/api/masterformat/'),
+        api.get('/activity-kits/'),
+        api.get('/activities/'),
+        api.get('/masterformat/'),
       ]);
       setKits(kitsRes.data);
       setMasterActivities(activitiesRes.data);
@@ -146,7 +146,7 @@ const ActivityKitList = () => {
   };
 
   const refreshCurrentKit = async (kitId: number) => {
-    const res = await axios.get(`http://localhost:8000/api/activity-kits/${kitId}/`);
+    const res = await api.get(`/activity-kits/${kitId}/`);
     setCurrentKit(res.data);
     setKits(prev => prev.map(k => k.id === kitId ? res.data : k));
   };
@@ -175,11 +175,11 @@ const ActivityKitList = () => {
     try {
       const data = { codigo_kit: kitForm.codigo_kit || null, nombre: kitForm.nombre, descripcion: kitForm.descripcion, color: kitForm.color };
       if (currentKit) {
-        const res = await axios.put(`http://localhost:8000/api/activity-kits/${currentKit.id}/`, data);
+        const res = await api.put(`/activity-kits/${currentKit.id}/`, data);
         setCurrentKit(res.data);
         setKits(prev => prev.map(k => k.id === currentKit.id ? res.data : k));
       } else {
-        const res = await axios.post('http://localhost:8000/api/activity-kits/', data);
+        const res = await api.post('/activity-kits/', data);
         setCurrentKit(res.data);
         setKits(prev => [...prev, res.data]);
       }
@@ -194,7 +194,7 @@ const ActivityKitList = () => {
   const handleDeleteKit = async (id: number) => {
     if (!window.confirm('¿Eliminar este kit y todas sus actividades?')) return;
     try {
-      await axios.delete(`http://localhost:8000/api/activity-kits/${id}/`);
+      await api.delete(`/activity-kits/${id}/`);
       setKits(prev => prev.filter(k => k.id !== id));
     } catch (err) {
       console.error(err);
@@ -230,7 +230,7 @@ const ActivityKitList = () => {
     setSavingActivity(true);
     try {
       if (editingActivityId) {
-        await axios.patch(`http://localhost:8000/api/activities/${editingActivityId}/`, {
+        await api.patch(`/activities/${editingActivityId}/`, {
           codigo_actividad: activityForm.codigo_actividad,
           descripcion: activityForm.descripcion,
           unidad: activityForm.unidad,
@@ -241,7 +241,7 @@ const ActivityKitList = () => {
           division: activityForm.division,
         });
       } else {
-        await axios.post(`http://localhost:8000/api/activity-kits/${currentKit.id}/add_activity/`, {
+        await api.post(`/activity-kits/${currentKit.id}/add_activity/`, {
           codigo_actividad: activityForm.codigo_actividad,
           descripcion: activityForm.descripcion,
           unidad: activityForm.unidad,
@@ -266,7 +266,7 @@ const ActivityKitList = () => {
   const handleDeleteActivity = async (actId: number) => {
     if (!currentKit || !window.confirm('¿Eliminar esta actividad del kit?')) return;
     try {
-      await axios.delete(`http://localhost:8000/api/activities/${actId}/`);
+      await api.delete(`/activities/${actId}/`);
       setCurrentKit(prev => prev ? { ...prev, kit_activities: prev.kit_activities.filter(a => a.id !== actId) } : prev);
       setKits(prev => prev.map(k => k.id === currentKit.id
         ? { ...k, kit_activities: k.kit_activities.filter(a => a.id !== actId) }
@@ -299,7 +299,7 @@ const ActivityKitList = () => {
     if (!currentKit || selectedMasterIds.size === 0) return;
     setImporting(true);
     try {
-      await axios.post(`http://localhost:8000/api/activity-kits/${currentKit.id}/import_activities/`, {
+      await api.post(`/activity-kits/${currentKit.id}/import_activities/`, {
         activity_ids: [...selectedMasterIds],
       });
       await refreshCurrentKit(currentKit.id);

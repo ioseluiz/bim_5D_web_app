@@ -1,7 +1,15 @@
+from django.conf import settings
 from django.db import models
 from costs.models import ActivityKit
 
 class Project(models.Model):
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True, blank=True,
+        related_name='projects',
+        verbose_name="Propietario",
+    )
     nombre = models.CharField(max_length=255, verbose_name="Nombre del Proyecto")
     descripcion = models.TextField(blank=True, null=True, verbose_name="Descripción")
     creado_el = models.DateTimeField(auto_now_add=True)

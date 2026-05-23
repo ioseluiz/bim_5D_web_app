@@ -1,8 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import axios from 'axios';
-
-const API = 'http://localhost:8000/api';
+import api from '../api';
 
 interface MasterFormat {
   id: number;
@@ -88,12 +86,12 @@ const ProjectKits = () => {
     setLoading(true);
     try {
       const [projRes, projKitsRes, masterKitsRes, projActRes, masterActRes, divsRes] = await Promise.all([
-        axios.get(`${API}/projects/${id}/`),
-        axios.get(`${API}/activity-kits/?proyecto=${id}`),
-        axios.get(`${API}/activity-kits/`),
-        axios.get(`${API}/activities/?proyecto=${id}`),
-        axios.get(`${API}/activities/`),
-        axios.get(`${API}/masterformat/`),
+        api.get(`/projects/${id}/`),
+        api.get(`/activity-kits/?proyecto=${id}`),
+        api.get(`/activity-kits/`),
+        api.get(`/activities/?proyecto=${id}`),
+        api.get(`/activities/`),
+        api.get(`/masterformat/`),
       ]);
       setProject(projRes.data);
       setProjectKits(projKitsRes.data);
@@ -198,9 +196,9 @@ const ProjectKits = () => {
     };
     try {
       if (isEditingKit && currentKitId) {
-        await axios.put(`${API}/activity-kits/${currentKitId}/`, data);
+        await api.put(`/activity-kits/${currentKitId}/`, data);
       } else {
-        await axios.post(`${API}/activity-kits/`, data);
+        await api.post(`/activity-kits/`, data);
       }
       setShowKitModal(false);
       fetchAll();
@@ -213,7 +211,7 @@ const ProjectKits = () => {
   const handleDeleteKit = async (kitId: number) => {
     if (!window.confirm('¿Está seguro de que desea eliminar este kit del proyecto?')) return;
     try {
-      await axios.delete(`${API}/activity-kits/${kitId}/`);
+      await api.delete(`/activity-kits/${kitId}/`);
       fetchAll();
     } catch (err) {
       console.error(err);
@@ -223,7 +221,7 @@ const ProjectKits = () => {
 
   const handleCopyMasterKit = async (masterKitId: number) => {
     try {
-      await axios.post(`${API}/activity-kits/${masterKitId}/copy_to_project/`, { proyecto: parseInt(id!) });
+      await api.post(`/activity-kits/${masterKitId}/copy_to_project/`, { proyecto: parseInt(id!) });
       setShowCopyMasterModal(false);
       fetchAll();
     } catch (err) {
@@ -293,9 +291,9 @@ const ProjectKits = () => {
     };
     try {
       if (isEditingActivity && currentActivityId) {
-        await axios.put(`${API}/activities/${currentActivityId}/`, data);
+        await api.put(`/activities/${currentActivityId}/`, data);
       } else {
-        await axios.post(`${API}/activities/`, data);
+        await api.post(`/activities/`, data);
       }
       setShowActivityModal(false);
       fetchAll();
@@ -308,7 +306,7 @@ const ProjectKits = () => {
   const handleDeleteActivity = async (actId: number) => {
     if (!window.confirm('¿Está seguro de que desea eliminar esta actividad del proyecto?')) return;
     try {
-      await axios.delete(`${API}/activities/${actId}/`);
+      await api.delete(`/activities/${actId}/`);
       fetchAll();
     } catch (err) {
       console.error(err);

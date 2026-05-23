@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api';
 
 interface Division {
   id: number;
@@ -43,8 +43,8 @@ const ActivityList = () => {
   const fetchData = async () => {
     try {
       const [actRes, divRes] = await Promise.all([
-        axios.get('http://localhost:8000/api/activities/'),
-        axios.get('http://localhost:8000/api/masterformat/')
+        api.get('/activities/'),
+        api.get('/masterformat/')
       ]);
       setActivities(actRes.data);
       setDivisions(divRes.data);
@@ -66,7 +66,7 @@ const ActivityList = () => {
       // Calculate total
       const cu_total = (parseFloat(formData.material) + parseFloat(formData.mano_obra) + parseFloat(formData.equipo)).toString();
       
-      await axios.post('http://localhost:8000/api/activities/', {
+      await api.post('/activities/', {
         ...formData,
         cu_total
       });

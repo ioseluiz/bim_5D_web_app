@@ -1,21 +1,24 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from .models import MasterFormat, Activity, ActivityKit, ProjectBudgetItem
 from .serializers import (
     MasterFormatSerializer, ActivitySerializer, KitActivitySerializer,
-    ActivityKitSerializer, ProjectBudgetItemSerializer
+    ActivityKitSerializer, ProjectBudgetItemSerializer,
 )
+
 
 class MasterFormatViewSet(viewsets.ModelViewSet):
     queryset = MasterFormat.objects.all()
     serializer_class = MasterFormatSerializer
+    permission_classes = [AllowAny]
+
 
 class ActivityViewSet(viewsets.ModelViewSet):
     serializer_class = ActivitySerializer
 
     def get_queryset(self):
-        # For object-level operations allow any activity to be found
         if self.action not in ('list',):
             return Activity.objects.select_related('division').all()
 
@@ -23,18 +26,22 @@ class ActivityViewSet(viewsets.ModelViewSet):
         include_master = self.request.query_params.get('include_master', 'false').lower() == 'true'
 
         if proyecto_id:
-            qs = Activity.objects.filter(proyecto_id=proyecto_id)
+            # Verify the project belongs to the current user
+            qs = Activity.objects.filter(
+                proyecto_id=proyecto_id,
+                proyecto__owner=self.request.user,
+            )
             if include_master:
                 qs = (
                     Activity.objects.filter(proyecto__isnull=True, activity_kit__isnull=True) |
-                    Activity.objects.filter(proyecto_id=proyecto_id)
+                    Activity.objects.filter(proyecto_id=proyecto_id, proyecto__owner=self.request.user)
                 )
             return qs.select_related('division')
 
-        # Default: master catalogue only (no kit or project activities)
         return Activity.objects.filter(
             proyecto__isnull=True, activity_kit__isnull=True
         ).select_related('division')
+
 
 class ActivityKitViewSet(viewsets.ModelViewSet):
     serializer_class = ActivityKitSerializer
@@ -42,12 +49,17 @@ class ActivityKitViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         proyecto_id = self.request.query_params.get('proyecto')
         if proyecto_id:
-            return ActivityKit.objects.filter(proyecto_id=proyecto_id).prefetch_related('kit_activities__division')
-        return ActivityKit.objects.filter(proyecto__isnull=True).prefetch_related('kit_activities__division')
+            return ActivityKit.objects.filter(
+                proyecto_id=proyecto_id,
+                proyecto__owner=self.request.user,
+            ).prefetch_related('kit_activities__division')
+        # Master kits (no project) visible to all authenticated users
+        return ActivityKit.objects.filter(
+            proyecto__isnull=True
+        ).prefetch_related('kit_activities__division')
 
     @action(detail=True, methods=['post'], url_path='add_activity')
     def add_activity(self, request, pk=None):
-        """Create a single new activity for this kit (from scratch or derived from a master)."""
         kit = self.get_object()
         data = request.data.copy()
 
@@ -77,7 +89,6 @@ class ActivityKitViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='import_activities')
     def import_activities(self, request, pk=None):
-        """Import multiple master activities into this kit (creates editable copies)."""
         kit = self.get_object()
         master_ids = request.data.get('activity_ids', [])
         if not master_ids:
@@ -99,7 +110,7 @@ class ActivityKitViewSet(viewsets.ModelViewSet):
                     equipo=master.equipo,
                     division=master.division,
                     activity_kit=kit,
-                    base_actividad=master,
+                    base_actividad=master.base_actividad,
                 )
                 created.append(KitActivitySerializer(act).data)
             except Activity.DoesNotExist:
@@ -134,8 +145,7 @@ class ActivityKitViewSet(viewsets.ModelViewSet):
                 base_actividad=act.base_actividad,
             )
 
-        serializer = ActivityKitSerializer(new_kit)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(ActivityKitSerializer(new_kit).data, status=status.HTTP_201_CREATED)
 
 
 class ProjectBudgetItemViewSet(viewsets.ModelViewSet):
@@ -145,11 +155,13 @@ class ProjectBudgetItemViewSet(viewsets.ModelViewSet):
         if self.action not in ('list',):
             return ProjectBudgetItem.objects.select_related(
                 'actividad', 'actividad__division'
-            ).all()
+            ).filter(proyecto__owner=self.request.user)
+
         proyecto_id = self.request.query_params.get('proyecto')
         if proyecto_id:
             return ProjectBudgetItem.objects.filter(
-                proyecto_id=proyecto_id
+                proyecto_id=proyecto_id,
+                proyecto__owner=self.request.user,
             ).select_related('actividad', 'actividad__division')
         return ProjectBudgetItem.objects.none()
 
@@ -159,7 +171,9 @@ class ProjectBudgetItemViewSet(viewsets.ModelViewSet):
         if not proyecto_id:
             return Response({'error': 'Se requiere el ID del proyecto.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        kits = ActivityKit.objects.filter(proyecto_id=proyecto_id)
+        kits = ActivityKit.objects.filter(
+            proyecto_id=proyecto_id, proyecto__owner=request.user
+        )
         activities = Activity.objects.filter(activity_kit__in=kits)
 
         created = 0

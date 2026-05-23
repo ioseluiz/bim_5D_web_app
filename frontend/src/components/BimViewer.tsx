@@ -1074,12 +1074,15 @@ interface TimelinePanelProps {
   multiIndex: MultiPropertyIndex;
   doneColorMode: 'kit' | 'original' | 'uniform';
   doneUniformColor: string;
+  recordingState: 'idle' | 'recording' | 'converting';
   onDateChange: (date: string) => void;
   onTogglePlay: () => void;
   onStop: () => void;
   onDurationChange: (secs: number) => void;
   onDoneColorModeChange: (mode: 'kit' | 'original' | 'uniform') => void;
   onDoneUniformColorChange: (color: string) => void;
+  onStartRecording: () => void;
+  onStopRecording: () => void;
   onClose: () => void;
 }
 
@@ -1095,9 +1098,10 @@ const TICK_MS = 200;
 
 const TimelinePanel: React.FC<TimelinePanelProps> = ({
   dateRange, currentDate, playing, duration, kits, multiIndex,
-  doneColorMode, doneUniformColor,
+  doneColorMode, doneUniformColor, recordingState,
   onDateChange, onTogglePlay, onStop, onDurationChange,
-  onDoneColorModeChange, onDoneUniformColorChange, onClose,
+  onDoneColorModeChange, onDoneUniformColorChange,
+  onStartRecording, onStopRecording, onClose,
 }) => {
   if (!dateRange || !currentDate) {
     return (
@@ -1249,6 +1253,49 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({
         )}
       </div>
 
+      {/* Export MP4 button */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '2px 14px 6px', gap: 8 }}>
+        {recordingState === 'idle' && (
+          <button
+            onClick={onStartRecording}
+            disabled={!dateRange}
+            style={{
+              ...tlSt.speedBtn,
+              fontSize: 10, padding: '4px 12px',
+              color: dateRange ? '#f43f5e' : '#475569',
+              borderColor: dateRange ? 'rgba(244,63,94,0.35)' : 'rgba(255,255,255,0.08)',
+              background: dateRange ? 'rgba(244,63,94,0.08)' : 'none',
+              cursor: dateRange ? 'pointer' : 'not-allowed',
+            }}
+            title="Graba la animación completa y exporta como MP4"
+          >
+            ⏺ Exportar MP4
+          </button>
+        )}
+        {recordingState === 'recording' && (
+          <button
+            onClick={onStopRecording}
+            style={{
+              ...tlSt.speedBtn,
+              fontSize: 10, padding: '4px 12px',
+              color: '#f43f5e',
+              borderColor: 'rgba(244,63,94,0.5)',
+              background: 'rgba(244,63,94,0.12)',
+              cursor: 'pointer',
+              animation: 'recordPulse 1.2s ease-in-out infinite',
+            }}
+          >
+            ⏹ Grabando · Detener
+          </button>
+        )}
+        {recordingState === 'converting' && (
+          <span style={{ fontSize: 10, color: '#94a3b8', fontFamily: '"IBM Plex Mono",monospace', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ display: 'inline-block', animation: 'spin 0.8s linear infinite' }}>⟳</span>
+            Convirtiendo a MP4…
+          </span>
+        )}
+      </div>
+
       {/* Summary + today events */}
       <div style={tlSt.bottomRow}>
         <div style={tlSt.summaryGroup}>
@@ -1353,6 +1400,12 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
   const [doneColorMode,       setDoneColorMode]       = useState<'kit' | 'original' | 'uniform'>('kit');
   const [doneUniformColor,    setDoneUniformColor]    = useState('#22c55e');
   const timelineStylesRef = useRef<Set<string>>(new Set());
+
+  // Video export state
+  const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'converting'>('idle');
+  const mediaRecorderRef       = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef      = useRef<Blob[]>([]);
+  const recordingHasPlayedRef  = useRef(false);
 
   // Measurement tools state
   const [activeMeasureTool, setActiveMeasureTool] = useState<'length' | 'area' | 'volume' | null>(null);
@@ -1740,6 +1793,87 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
     onTimelineUpdate?.(timelineActive && timelineDateStr ? timelineDateStr : null);
   }, [timelineActive, timelineDateStr]);
 
+  // ── Video recording ──────────────────────────────────────────────────────
+  const handleStartRecording = useCallback(() => {
+    if (!timelineDateRange) return;
+    const canvas = containerRef.current?.querySelector('canvas') as HTMLCanvasElement | null;
+    if (!canvas) { alert('No se encontró el canvas del visor.'); return; }
+
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+      ? 'video/webm;codecs=vp9'
+      : 'video/webm';
+
+    const stream = canvas.captureStream(30);
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 6_000_000 });
+    recordedChunksRef.current = [];
+    recordingHasPlayedRef.current = false;
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+    };
+
+    recorder.onstop = async () => {
+      setRecordingState('converting');
+      const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+      const formData = new FormData();
+      formData.append('video', blob, 'timeliner.webm');
+      try {
+        const response = await fetch('http://localhost:8000/api/convert-video/', {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: 'Error desconocido' }));
+          alert(`Error al convertir: ${err.error}`);
+          return;
+        }
+        const mp4Blob = await response.blob();
+        const url = URL.createObjectURL(mp4Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'timeliner_export.mp4';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('[Export]', err);
+        alert('Error al conectar con el servidor para convertir el video.');
+      } finally {
+        setRecordingState('idle');
+      }
+    };
+
+    // Reset timeliner and start recording
+    setTimelineActive(true);
+    setTimelineDateStr(addDays(timelineDateRange.start, -1));
+    setRecordingState('recording');
+    mediaRecorderRef.current = recorder;
+    recorder.start(200);
+    // Small delay so the reset renders before play starts
+    setTimeout(() => {
+      recordingHasPlayedRef.current = false;
+      setTimelinePlaying(true);
+    }, 200);
+  }, [timelineDateRange]);
+
+  const handleStopRecording = useCallback(() => {
+    setTimelinePlaying(false);
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state === 'recording') recorder.stop();
+  }, []);
+
+  // Detect animation end during recording
+  useEffect(() => {
+    if (recordingState !== 'recording') return;
+    if (timelinePlaying) {
+      recordingHasPlayedRef.current = true;
+      return;
+    }
+    if (!recordingHasPlayedRef.current) return; // hasn't started yet
+    // Playing stopped after having started → animation finished
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state === 'recording') recorder.stop();
+  }, [timelinePlaying, recordingState]);
+
   // ── Setup ────────────────────────────────────────────────────────────────
   useEffect(() => {
     const container = containerRef.current;
@@ -2012,7 +2146,10 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
 
   return (
     <div className="w-100 h-100 position-relative" style={{ overflow:'hidden' }}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes recordPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+      `}</style>
 
       <div ref={containerRef} className="w-100 h-100" style={{ backgroundColor:'#cccccc' }} />
 
@@ -2120,6 +2257,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
           multiIndex={multiIndex}
           doneColorMode={doneColorMode}
           doneUniformColor={doneUniformColor}
+          recordingState={recordingState}
           onDateChange={d => { setTimelineDateStr(d); setTimelinePlaying(false); }}
           onTogglePlay={() => {
             if (!timelineDateRange) return;
@@ -2133,6 +2271,8 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
           onDurationChange={setTimelineDuration}
           onDoneColorModeChange={setDoneColorMode}
           onDoneUniformColorChange={setDoneUniformColor}
+          onStartRecording={handleStartRecording}
+          onStopRecording={handleStopRecording}
           onClose={() => {
             setTimelinePanelVis(false);
             setTimelineActive(false);

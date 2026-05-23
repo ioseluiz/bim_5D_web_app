@@ -1,8 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import axios from 'axios';
-
-const API = 'http://localhost:8000/api';
+import api from '../api';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -118,12 +116,12 @@ const ProjectSchedule = () => {
     if (!id) return;
     setLoading(true);
     const [projRes, projKitsRes, masterKitsRes, projActRes, masterActRes, divRes] = await Promise.all([
-      axios.get(`${API}/projects/${id}/`),
-      axios.get(`${API}/schedule-kits/?proyecto=${id}`),
-      axios.get(`${API}/schedule-kits/`),
-      axios.get(`${API}/schedule-activities/?proyecto=${id}`),
-      axios.get(`${API}/schedule-activities/`),
-      axios.get(`${API}/masterformat/`),
+      api.get(`/projects/${id}/`),
+      api.get(`/schedule-kits/?proyecto=${id}`),
+      api.get(`/schedule-kits/`),
+      api.get(`/schedule-activities/?proyecto=${id}`),
+      api.get(`/schedule-activities/`),
+      api.get(`/masterformat/`),
     ]);
     setProject(projRes.data);
     setProjectKits(projKitsRes.data);
@@ -241,10 +239,10 @@ const ProjectSchedule = () => {
       };
       let kitId: number;
       if (isEditingKit && currentKitId) {
-        await axios.patch(`${API}/schedule-kits/${currentKitId}/`, payload);
+        await api.patch(`/schedule-kits/${currentKitId}/`, payload);
         kitId = currentKitId;
       } else {
-        const res = await axios.post(`${API}/schedule-kits/`, payload);
+        const res = await api.post(`/schedule-kits/`, payload);
         kitId = res.data.id;
       }
 
@@ -254,10 +252,10 @@ const ProjectSchedule = () => {
       const toRemove = existingIds.filter(aid => !kitForm.selectedActivities.includes(aid));
 
       await Promise.all([
-        ...toAdd.map(aid => axios.post(`${API}/schedule-kits/${kitId}/add_actividad/`, {
+        ...toAdd.map(aid => api.post(`/schedule-kits/${kitId}/add_actividad/`, {
           base_actividad_id: aid,
         })),
-        ...toRemove.map(aid => axios.delete(`${API}/schedule-activities/${aid}/`)),
+        ...toRemove.map(aid => api.delete(`/schedule-activities/${aid}/`)),
       ]);
 
       setShowKitModal(false);
@@ -270,7 +268,7 @@ const ProjectSchedule = () => {
   const handleDeleteKit = async (kitId: number) => {
     if (!window.confirm('¿Eliminar este kit del proyecto?')) return;
     try {
-      await axios.delete(`${API}/schedule-kits/${kitId}/`);
+      await api.delete(`/schedule-kits/${kitId}/`);
       await fetchAll();
     } catch (err) {
       console.error(err);
@@ -282,7 +280,7 @@ const ProjectSchedule = () => {
     if (!id) return;
     setCopyingKitId(masterKitId);
     try {
-      await axios.post(`${API}/schedule-kits/${masterKitId}/copy_to_project/`, {
+      await api.post(`/schedule-kits/${masterKitId}/copy_to_project/`, {
         proyecto: parseInt(id),
       });
       setShowCopyMasterModal(false);
@@ -347,9 +345,9 @@ const ProjectSchedule = () => {
         proyecto: parseInt(id),
       };
       if (isEditingActivity && currentActivityId) {
-        await axios.patch(`${API}/schedule-activities/${currentActivityId}/`, payload);
+        await api.patch(`/schedule-activities/${currentActivityId}/`, payload);
       } else {
-        await axios.post(`${API}/schedule-activities/`, payload);
+        await api.post(`/schedule-activities/`, payload);
       }
       setShowActivityModal(false);
       await fetchAll();
@@ -360,7 +358,7 @@ const ProjectSchedule = () => {
 
   const handleDeleteActivity = async (actId: number) => {
     if (!confirm('¿Eliminar esta actividad?')) return;
-    await axios.delete(`${API}/schedule-activities/${actId}/`);
+    await api.delete(`/schedule-activities/${actId}/`);
     await fetchAll();
   };
 

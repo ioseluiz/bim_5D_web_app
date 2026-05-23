@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 import * as WEBIFC from 'web-ifc';
-
-const API = 'http://localhost:8000/api';
 const WASM_PATH = 'https://unpkg.com/web-ifc@0.0.77/';
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
@@ -153,11 +151,11 @@ const ProjectBudget = () => {
     setLoading(true);
     try {
       const [projRes, itemsRes, kitsRes, masterActRes, projActRes] = await Promise.all([
-        axios.get(`${API}/projects/${id}/`),
-        axios.get(`${API}/budget-items/?proyecto=${id}`),
-        axios.get(`${API}/activity-kits/`),
-        axios.get(`${API}/activities/`),
-        axios.get(`${API}/activities/?proyecto=${id}`),
+        api.get(`/projects/${id}/`),
+        api.get(`/budget-items/?proyecto=${id}`),
+        api.get(`/activity-kits/`),
+        api.get(`/activities/`),
+        api.get(`/activities/?proyecto=${id}`),
       ]);
       setProject(projRes.data);
       setBudgetItems(itemsRes.data);
@@ -286,7 +284,7 @@ const ProjectBudget = () => {
     try {
       await Promise.all(
         changed.map(i =>
-          axios.patch(`${API}/budget-items/${i.id}/`, { cantidad: localQty[i.id] || '0' }),
+          api.patch(`/budget-items/${i.id}/`, { cantidad: localQty[i.id] || '0' }),
         ),
       );
       setBudgetItems(prev =>
@@ -353,7 +351,7 @@ const ProjectBudget = () => {
       for (const kit of matchedKits) {
         for (const act of kit.kit_activities) {
           if (!budgetActivityIds.has(act.id)) {
-            await axios.post(`${API}/budget-items/`, {
+            await api.post(`/budget-items/`, {
               proyecto: parseInt(id!),
               actividad: act.id,
               cantidad: 0,
@@ -387,7 +385,7 @@ const ProjectBudget = () => {
     if (current === original) return;
     setSavingId(itemId);
     try {
-      await axios.patch(`${API}/budget-items/${itemId}/`, { cantidad: current || '0' });
+      await api.patch(`/budget-items/${itemId}/`, { cantidad: current || '0' });
       setBudgetItems(prev =>
         prev.map(i =>
           i.id === itemId
@@ -401,7 +399,7 @@ const ProjectBudget = () => {
 
   const handleAddActivity = async (actId: number) => {
     try {
-      await axios.post(`${API}/budget-items/`, { proyecto: parseInt(id!), actividad: actId, cantidad: 0 });
+      await api.post(`/budget-items/`, { proyecto: parseInt(id!), actividad: actId, cantidad: 0 });
       setShowAddModal(false);
       setAddSearchTerm('');
       fetchAll();
@@ -410,7 +408,7 @@ const ProjectBudget = () => {
 
   const handleRemoveItem = async (itemId: number) => {
     try {
-      await axios.delete(`${API}/budget-items/${itemId}/`);
+      await api.delete(`/budget-items/${itemId}/`);
       setBudgetItems(prev => prev.filter(i => i.id !== itemId));
     } catch { console.error('Error al eliminar ítem'); }
   };

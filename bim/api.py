@@ -4,18 +4,30 @@ from rest_framework.response import Response
 from .models import Project, BIMModel, BIMElement
 from .serializers import ProjectSerializer, BIMModelSerializer, BIMElementSerializer
 
+
 class ProjectViewSet(viewsets.ModelViewSet):
-    queryset = Project.objects.all()
     serializer_class = ProjectSerializer
 
+    def get_queryset(self):
+        return Project.objects.filter(owner=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+
 class BIMModelViewSet(viewsets.ModelViewSet):
-    queryset = BIMModel.objects.all()
     serializer_class = BIMModelSerializer
 
+    def get_queryset(self):
+        return BIMModel.objects.filter(proyecto__owner=self.request.user)
+
+
 class BIMElementViewSet(viewsets.ModelViewSet):
-    queryset = BIMElement.objects.all()
     serializer_class = BIMElementSerializer
     lookup_field = 'guid'
+
+    def get_queryset(self):
+        return BIMElement.objects.filter(modelo__proyecto__owner=self.request.user)
 
     @action(detail=False, methods=['post'])
     def link_kit(self, request):
@@ -29,24 +41,14 @@ class BIMElementViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Missing GUID or Model ID'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            bim_model = BIMModel.objects.get(pk=model_id)
-            element, created = BIMElement.objects.get_or_create(
+            bim_model = BIMModel.objects.get(pk=model_id, proyecto__owner=request.user)
+            element, _ = BIMElement.objects.get_or_create(
                 guid=guid,
-                defaults={
-                    'modelo': bim_model,
-                    'categoria': categoria,
-                    'tipo': tipo
-                }
+                defaults={'modelo': bim_model, 'categoria': categoria, 'tipo': tipo},
             )
-
-            if kit_id:
-                element.activity_kit_id = kit_id
-            else:
-                element.activity_kit = None
-            
+            element.activity_kit_id = kit_id if kit_id else None
             element.save()
-            serializer = self.get_serializer(element)
-            return Response(serializer.data)
+            return Response(self.get_serializer(element).data)
         except BIMModel.DoesNotExist:
             return Response({'error': 'Model not found'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:

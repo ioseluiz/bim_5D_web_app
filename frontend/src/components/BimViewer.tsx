@@ -1085,6 +1085,8 @@ interface TimelinePanelProps {
   onStartRecording: () => void;
   onStopRecording: () => void;
   onClose: () => void;
+  hiddenKitCodes: Set<string>;
+  onToggleHiddenKit: (code: string) => void;
 }
 
 const DURATIONS = [
@@ -1103,6 +1105,7 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({
   onDateChange, onTogglePlay, onStop, onDurationChange,
   onDoneColorModeChange, onDoneUniformColorChange,
   onStartRecording, onStopRecording, onClose,
+  hiddenKitCodes, onToggleHiddenKit,
 }) => {
   const [collapsed, setCollapsed] = React.useState(false);
 
@@ -1305,6 +1308,57 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({
         )}
       </div>
 
+      {/* Kit visibility toggles */}
+      {ifcKits.length > 0 && (
+        <div style={{ padding: '4px 14px 6px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+            <span style={{ fontSize: 9, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
+              Visibilidad en animación
+            </span>
+            {hiddenKitCodes.size > 0 && (
+              <span style={{ ...tlSt.badge, background: 'rgba(239,68,68,0.1)', color: '#f87171', fontSize: 8 }}>
+                {hiddenKitCodes.size} oculto{hiddenKitCodes.size !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 4 }}>
+            {ifcKits.map(kit => {
+              const isHidden = hiddenKitCodes.has(kit.codigo_kit);
+              return (
+                <button
+                  key={kit.codigo_kit}
+                  onClick={() => onToggleHiddenKit(kit.codigo_kit)}
+                  title={isHidden ? `Mostrar ${kit.codigo_kit} en animación` : `Ocultar ${kit.codigo_kit} de la animación`}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    background: isHidden ? 'rgba(239,68,68,0.07)' : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${isHidden ? 'rgba(239,68,68,0.25)' : 'rgba(255,255,255,0.1)'}`,
+                    borderRadius: 4, padding: '3px 8px', cursor: 'pointer',
+                    fontFamily: '"IBM Plex Mono",monospace',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <span style={{
+                    width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                    background: isHidden ? 'rgba(239,68,68,0.4)' : (kit.color || '#22c55e'),
+                  }} />
+                  <span style={{
+                    fontSize: 9,
+                    color: isHidden ? '#f87171' : '#94a3b8',
+                    textDecoration: isHidden ? 'line-through' : 'none',
+                  }}>
+                    {kit.codigo_kit}
+                  </span>
+                  <span style={{ fontSize: 9, color: isHidden ? '#f87171' : '#475569' }}>
+                    {isHidden ? '⊘' : '●'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Export MP4 button */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '2px 14px 6px', gap: 8 }}>
         {recordingState === 'idle' && (
@@ -1452,6 +1506,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
   const [timelineDuration,    setTimelineDuration]    = useState(30);
   const [doneColorMode,       setDoneColorMode]       = useState<'kit' | 'original' | 'uniform'>('kit');
   const [doneUniformColor,    setDoneUniformColor]    = useState('#22c55e');
+  const [hiddenKitCodes,      setHiddenKitCodes]      = useState<Set<string>>(new Set());
   const timelineStylesRef = useRef<Set<string>>(new Set());
 
   // Video export state
@@ -1681,6 +1736,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
 
       for (const kit of ifcScheduleKits) {
         if (!kit.codigo_kit || !kit.fecha_inicio) continue;
+        if (hiddenKitCodes.has(kit.codigo_kit)) continue; // excluido por usuario → ocultar siempre
         const codeMap = kitCodeIdx.get(kit.codigo_kit);
         if (!codeMap || Object.keys(codeMap).length === 0) continue;
 
@@ -1718,10 +1774,16 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
       }
 
       try {
-        await hider.isolate(visibleMap);
+        // If no non-hidden kit has started yet, show everything in original state.
+        // isolate({}) would hide all fragments leaving only the grey base mesh.
+        if (Object.keys(visibleMap).length === 0) {
+          await hider.set(true);
+        } else {
+          await hider.isolate(visibleMap);
+        }
       } catch {}
     })();
-  }, [timelineActive, timelineDateStr, multiIndex, ifcScheduleKits, doneColorMode, doneUniformColor]);
+  }, [timelineActive, timelineDateStr, multiIndex, ifcScheduleKits, doneColorMode, doneUniformColor, hiddenKitCodes]);
 
   // ── Timeline animation loop ───────────────────────────────────────────────
   useEffect(() => {
@@ -2323,6 +2385,12 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
             setTimelineActive(false);
             setTimelinePlaying(false);
           }}
+          hiddenKitCodes={hiddenKitCodes}
+          onToggleHiddenKit={(code) => setHiddenKitCodes(prev => {
+            const next = new Set(prev);
+            next.has(code) ? next.delete(code) : next.add(code);
+            return next;
+          })}
         />
       ) : (
         <button

@@ -19,3 +19,12 @@ sqlparse==0.5.5
 tablib==3.9.0
 openpyxl==3.1.5
 tzdata==2026.2
+
+# ── Producción ────────────────────────────────────────────────────────────────
+# Solo se usan en config.settings.production, pero se instalan siempre para
+# que el mismo requirements.txt sirva en CI y en la VM.
+psycopg[binary]==3.3.4
+gunicorn==23.0.0
+whitenoise==6.8.2
+django-storages[azure]==1.14.4
+dj-database-url==2.3.0

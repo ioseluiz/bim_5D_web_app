@@ -12,6 +12,10 @@ db.sqlite3
 .env
 .env.*
 !.env.example
+# Los .env del frontend solo contienen VITE_API_URL (público, se hornea en el build),
+# así que sí van al repo para que el build reproducible funcione en CI.
+!frontend/.env.development
+!frontend/.env.production
 
 # ── Archivos subidos por usuarios (IFC y otros) ────────────────────────────────
 media/

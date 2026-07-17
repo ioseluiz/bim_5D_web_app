@@ -10,6 +10,9 @@ dist-ssr/
 .env
 .env.*
 !.env.example
+# Solo VITE_API_URL (público, se hornea en el build) — se versionan para deploys reproducibles.
+!.env.development
+!.env.production
 
 # ── Logs ───────────────────────────────────────────────────────────────────────
 logs/

@@ -255,7 +255,7 @@ const ProjectDetail = () => {
               <i className="bi bi-box-seam me-2"></i>Kits del Proyecto
             </Link>
             <Link to={`/projects/${id}/budget`} className="btn btn-success btn-sm fw-bold shadow-sm">
-              <i className="bi bi-table me-2"></i>Presupuesto
+              <i className="bi bi-table me-2"></i>Costo Básico de Construcción
             </Link>
             <Link to={`/projects/${id}/schedule`} className="btn btn-success btn-sm fw-bold shadow-sm">
               <i className="bi bi-calendar3 me-2"></i>Cronograma
@@ -422,7 +422,7 @@ const ProjectDetail = () => {
             )}
           </div>
 
-          {/* ── Panel de tabs: Presupuesto | Gantt ── */}
+          {/* ── Panel de tabs: Costo Básico de Construcción | Gantt ── */}
           <div className="card shadow-sm border-0 d-flex flex-column" style={{ height: '30vh', minHeight: 240 }}>
             {/* Tab headers */}
             <div className="d-flex align-items-center border-bottom bg-white px-2 pt-1" style={{ flexShrink: 0 }}>
@@ -433,7 +433,7 @@ const ProjectDetail = () => {
                     onClick={() => setActivePanel('budget')}
                   >
                     <i className="bi bi-table me-2 text-success" />
-                    Presupuesto
+                    Costo Básico de Construcción
                     {activeKitIds && activeKitIds.size > 0 && (
                       <span className="badge bg-success ms-2" style={{ fontSize: 10 }}>
                         {activeKitIds.size} filtrado{activeKitIds.size !== 1 ? 's' : ''}
@@ -468,7 +468,7 @@ const ProjectDetail = () => {
             {/* Tab content */}
             <div style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1 }}>
 
-              {/* ── Presupuesto ── */}
+              {/* ── Costo Básico de Construcción ── */}
               {activePanel === 'budget' && (
                 loadingBudget ? (
                   <div className="text-center py-4">

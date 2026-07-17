@@ -571,12 +571,12 @@ const ProjectBudget = () => {
               <ol className="breadcrumb mb-1 small">
                 <li className="breadcrumb-item"><Link to="/projects" className="text-decoration-none">Proyectos</Link></li>
                 <li className="breadcrumb-item"><Link to={`/projects/${id}`} className="text-decoration-none">{project.nombre}</Link></li>
-                <li className="breadcrumb-item active">Presupuesto</li>
+                <li className="breadcrumb-item active">Costo Básico de Construcción</li>
               </ol>
             </nav>
             <h3 className="mb-0 fw-bold">{project.nombre}</h3>
             <p className="text-muted mb-0 small">
-              Presupuesto — {viewMode === 'kits' ? 'Vista por Kits de Costos' : 'Vista por División MasterFormat'}
+              Costo Básico de Construcción — {viewMode === 'kits' ? 'Vista por Kits de Costos' : 'Vista por División MasterFormat'}
             </p>
           </div>
           <div className="d-flex gap-2 no-print">
@@ -801,7 +801,7 @@ const ProjectBudget = () => {
             <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
               <div className="modal-content border-0 shadow-lg">
                 <div className="modal-header bg-success text-white py-3">
-                  <h5 className="modal-title fw-bold">Agregar Actividad al Presupuesto</h5>
+                  <h5 className="modal-title fw-bold">Agregar Actividad al Costo Básico de Construcción</h5>
                   <button type="button" className="btn-close btn-close-white" onClick={() => setShowAddModal(false)} />
                 </div>
                 <div className="modal-body p-3">

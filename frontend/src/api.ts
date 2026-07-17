@@ -13,7 +13,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401 || err.response?.status === 403) {
+    // Solo redirigir a /login si YA había un token guardado (sesión expirada).
+    // En el login inicial no hay token: 401/403 significa credenciales malas
+    // y queremos que la página de login muestre el error, no recargar.
+    const hadToken = !!localStorage.getItem('auth_token');
+    if (hadToken && (err.response?.status === 401 || err.response?.status === 403)) {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
       window.location.href = '/login';

@@ -1,12 +1,22 @@
 from django.contrib.auth import authenticate, get_user_model
 from rest_framework import status
+from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 
 @api_view(['POST'])
+# Sin authentication_classes: si el usuario tiene una cookie de sesión activa
+# (ej. logueado en Django admin), SessionAuthentication forzaría CSRF y el
+# POST desde axios (sin CSRF token) fallaría con 403. Login no necesita
+# identificar al usuario actual — solo valida credenciales.
+@authentication_classes([])
 @permission_classes([AllowAny])
 def login_view(request):
     email = request.data.get('email', '').strip()
@@ -50,6 +60,9 @@ def login_view(request):
 
 
 @api_view(['POST'])
+# Solo TokenAuthentication: evita que la cookie de sesión del admin dispare
+# CSRF check innecesariamente.
+@authentication_classes([TokenAuthentication])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
     request.user.auth_token.delete()
@@ -57,6 +70,7 @@ def logout_view(request):
 
 
 @api_view(['GET'])
+@authentication_classes([TokenAuthentication])
 @permission_classes([IsAuthenticated])
 def me_view(request):
     user = request.user

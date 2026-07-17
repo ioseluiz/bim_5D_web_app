@@ -270,6 +270,86 @@ async function scanProperties(
   return result;
 }
 
+/**
+ * Scans IFC entity types (Revit category) and ObjectType attribute (Revit family)
+ * for every physical element found via IfcRelContainedInSpatialStructure.
+ * Injects results as '__ifc_category__' and '__revit_family__' into a MultiPropertyIndex.
+ */
+async function scanEntityTypes(
+  ifcBuffer: Uint8Array,
+  fragmentsModelId: string,
+  wasmPath = 'https://unpkg.com/web-ifc@0.0.77/',
+): Promise<MultiPropertyIndex> {
+  const categoryIdx: PropertyIndex = new Map();
+  const familyIdx:   PropertyIndex = new Map();
+  const result: MultiPropertyIndex = new Map([
+    ['__ifc_category__', categoryIdx],
+    ['__revit_family__',  familyIdx],
+  ]);
+
+  // Build numeric-type → label map from WEBIFC constants
+  const typeNameMap: Record<number, string> = {};
+  for (const [key, value] of Object.entries(WEBIFC)) {
+    if (typeof value === 'number') {
+      typeNameMap[value] = key.replace(/^IFC/, '').replace(/_/g, ' ')
+        .toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+  }
+
+  const ifcApi = new WEBIFC.IfcAPI();
+  ifcApi.SetWasmPath(wasmPath, true);
+  await ifcApi.Init();
+
+  const modelId = ifcApi.OpenModel(ifcBuffer, { COORDINATE_TO_ORIGIN: false, USE_FAST_BOOLS: true });
+
+  try {
+    const getLine = (id: number): any => {
+      try { return ifcApi.GetLine(modelId, id, false); } catch { return null; }
+    };
+
+    const addToIdx = (idx: PropertyIndex, label: string, eid: number) => {
+      if (!idx.has(label)) idx.set(label, {});
+      const m = idx.get(label)!;
+      if (!m[fragmentsModelId]) m[fragmentsModelId] = new Set<number>();
+      (m[fragmentsModelId] as Set<number>).add(eid);
+    };
+
+    const relIds = ifcApi.GetLineIDsWithType(modelId, WEBIFC.IFCRELCONTAINEDINSPATIALSTRUCTURE);
+    for (let i = 0; i < relIds.size(); i++) {
+      const rel = getLine(relIds.get(i));
+      if (!rel || !Array.isArray(rel.RelatedElements)) continue;
+
+      for (const ref of rel.RelatedElements) {
+        const eid: number = typeof ref === 'object' && ref !== null && 'value' in ref ? ref.value : ref;
+        if (typeof eid !== 'number') continue;
+
+        const elem = getLine(eid);
+        if (!elem) continue;
+
+        // Category from IFC entity type
+        const typeLabel = typeof elem.type === 'number' ? typeNameMap[elem.type] : undefined;
+        if (typeLabel) addToIdx(categoryIdx, typeLabel, eid);
+
+        // Family from ObjectType attribute
+        const rawOT = elem.ObjectType;
+        const familyVal = typeof rawOT === 'object' && rawOT !== null && 'value' in rawOT
+          ? String(rawOT.value ?? '') : String(rawOT ?? '');
+        const family = familyVal.trim();
+        if (family && family !== 'null' && family !== 'undefined' && family !== '') {
+          addToIdx(familyIdx, family, eid);
+        }
+      }
+    }
+
+    console.log(`[BIM Scan] '__ifc_category__': ${categoryIdx.size} categorías`);
+    console.log(`[BIM Scan] '__revit_family__': ${familyIdx.size} familias`);
+  } finally {
+    ifcApi.CloseModel(modelId);
+  }
+
+  return result;
+}
+
 // ─── Filter helpers ────────────────────────────────────────────────────────────
 
 function unionModelIdMaps(maps: OBC.ModelIdMap[]): OBC.ModelIdMap {
@@ -858,7 +938,7 @@ const BudgetPanel: React.FC<BudgetPanelProps> = ({
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ color:'#10b981', fontSize:16, fontWeight:700, lineHeight:1 }}>$</span>
           <div>
-            <div style={bdgSt.headerTitle}>Presupuesto</div>
+            <div style={bdgSt.headerTitle}>Costo Básico de Construcción</div>
             <div style={bdgSt.headerSub}>
               {isFiltered
                 ? `${activeEntries.length} de ${entries.length} kits seleccionados`
@@ -1087,6 +1167,8 @@ interface TimelinePanelProps {
   onClose: () => void;
   hiddenKitCodes: Set<string>;
   onToggleHiddenKit: (code: string) => void;
+  hiddenCategories: Set<string>;
+  onToggleHiddenCategory: (cat: string) => void;
 }
 
 const DURATIONS = [
@@ -1106,6 +1188,7 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({
   onDoneColorModeChange, onDoneUniformColorChange,
   onStartRecording, onStopRecording, onClose,
   hiddenKitCodes, onToggleHiddenKit,
+  hiddenCategories, onToggleHiddenCategory,
 }) => {
   const [collapsed, setCollapsed] = React.useState(false);
 
@@ -1279,6 +1362,9 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({
         <div style={{ ...tlSt.progressFill, width: `${progress}%` }} />
       </div>
 
+      {/* Scrollable section: color mode + toggles + export + summary */}
+      <div style={{ overflowY: 'auto', flex: 1 }}>
+
       {/* Done color mode selector */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 14px 4px', flexWrap: 'wrap' as const }}>
         <span style={{ fontSize: 9, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>Completados:</span>
@@ -1321,7 +1407,7 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({
               </span>
             )}
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 4 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 4, maxHeight: 90, overflowY: 'auto' }}>
             {ifcKits.map(kit => {
               const isHidden = hiddenKitCodes.has(kit.codigo_kit);
               return (
@@ -1358,6 +1444,70 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({
           </div>
         </div>
       )}
+
+      {/* Category visibility toggles */}
+      {(() => {
+        const catIdx = multiIndex.get('__ifc_category__');
+        const categories = catIdx ? [...catIdx.keys()].sort() : [];
+        if (categories.length === 0) return null;
+        return (
+          <div style={{ padding: '4px 14px 6px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+              <span style={{ fontSize: 9, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
+                Filtrar por Categoría
+              </span>
+              {hiddenCategories.size > 0 && (
+                <span style={{ ...tlSt.badge, background: 'rgba(239,68,68,0.1)', color: '#f87171', fontSize: 8 }}>
+                  {hiddenCategories.size} oculta{hiddenCategories.size !== 1 ? 's' : ''}
+                </span>
+              )}
+              {hiddenCategories.size > 0 && (
+                <button
+                  onClick={() => categories.forEach(c => hiddenCategories.has(c) && onToggleHiddenCategory(c))}
+                  style={{ ...tlSt.badge, background: 'none', border: '1px solid rgba(100,116,139,0.3)', color: '#64748b', cursor: 'pointer', fontSize: 8 }}
+                >
+                  mostrar todas
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 4, maxHeight: 90, overflowY: 'auto' }}>
+              {categories.map(cat => {
+                const isHidden = hiddenCategories.has(cat);
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => onToggleHiddenCategory(cat)}
+                    title={isHidden ? `Mostrar ${cat} en animación` : `Ocultar ${cat} de la animación`}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      background: isHidden ? 'rgba(239,68,68,0.07)' : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${isHidden ? 'rgba(239,68,68,0.25)' : 'rgba(255,255,255,0.1)'}`,
+                      borderRadius: 4, padding: '3px 8px', cursor: 'pointer',
+                      fontFamily: '"IBM Plex Mono",monospace',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <span style={{
+                      width: 7, height: 7, borderRadius: 2, flexShrink: 0,
+                      background: isHidden ? 'rgba(239,68,68,0.4)' : '#a78bfa',
+                    }} />
+                    <span style={{
+                      fontSize: 9,
+                      color: isHidden ? '#f87171' : '#94a3b8',
+                      textDecoration: isHidden ? 'line-through' : 'none',
+                    }}>
+                      {cat}
+                    </span>
+                    <span style={{ fontSize: 9, color: isHidden ? '#f87171' : '#475569' }}>
+                      {isHidden ? '⊘' : '●'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Export MP4 button */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '2px 14px 6px', gap: 8 }}>
@@ -1435,18 +1585,20 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({
           </div>
         )}
       </div>
+
+      </div>{/* end scrollable section */}
     </div>
   );
 };
 
 const tlSt: Record<string, React.CSSProperties> = {
-  container:      { ...BASE, position: 'absolute', bottom: '52px', left: '50%', transform: 'translateX(-50%)', width: 760, maxWidth: 'calc(100% - 32px)', zIndex: 1000 },
+  container:      { ...BASE, position: 'absolute', bottom: '52px', left: '50%', transform: 'translateX(-50%)', width: 760, maxWidth: 'calc(100% - 32px)', zIndex: 1000, maxHeight: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   header:         { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 14px', borderBottom: '1px solid rgba(255,255,255,0.07)', backgroundColor: 'rgba(245,158,11,0.04)', flexShrink: 0 },
   headerTitle:    { fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#f59e0b' },
   headerSub:      { fontSize: 9, color: '#64748b', marginLeft: 6 },
   closeBtn:       { background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, padding: '2px 4px', borderRadius: 4, lineHeight: 1 },
   collapseBtn:    { background: 'none', border: 'none', color: '#f59e0b', cursor: 'pointer', fontSize: 10, padding: '2px 5px', borderRadius: 4, lineHeight: 1, opacity: 0.8 },
-  controlsRow:    { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px 4px' },
+  controlsRow:    { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px 4px', flexShrink: 0 },
   dateLabel:      { fontSize: 13, fontWeight: 700, color: '#e2e8f0', fontFamily: '"IBM Plex Mono","Fira Code",monospace', marginRight: 8 },
   progressPct:    { fontSize: 9, color: '#64748b' },
   ctrlBtn:        { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', cursor: 'pointer', borderRadius: 5, padding: '4px 10px', fontSize: 13, lineHeight: 1, fontFamily: '"IBM Plex Mono",monospace' },
@@ -1454,10 +1606,10 @@ const tlSt: Record<string, React.CSSProperties> = {
   pauseBtn:       { backgroundColor: 'rgba(148,163,184,0.1)', borderColor: 'rgba(148,163,184,0.25)', color: '#94a3b8' },
   speedBtn:       { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#475569', cursor: 'pointer', borderRadius: 4, padding: '3px 7px', fontSize: 9, fontFamily: '"IBM Plex Mono",monospace', lineHeight: 1 },
   speedBtnActive: { backgroundColor: 'rgba(56,189,248,0.15)', borderColor: 'rgba(56,189,248,0.3)', color: '#38bdf8' },
-  sliderRow:      { display: 'flex', alignItems: 'center', gap: 8, padding: '2px 14px 4px' },
+  sliderRow:      { display: 'flex', alignItems: 'center', gap: 8, padding: '2px 14px 4px', flexShrink: 0 },
   sliderEdge:     { fontSize: 9, color: '#475569', whiteSpace: 'nowrap' as const, flexShrink: 0, fontFamily: '"IBM Plex Mono",monospace' },
   slider:         { flex: 1, accentColor: '#f59e0b', cursor: 'pointer' },
-  progressBarWrap:{ height: 3, backgroundColor: 'rgba(255,255,255,0.05)', margin: '0 14px 6px', borderRadius: 2, overflow: 'hidden' },
+  progressBarWrap:{ height: 3, backgroundColor: 'rgba(255,255,255,0.05)', margin: '0 14px 6px', borderRadius: 2, overflow: 'hidden', flexShrink: 0 },
   progressFill:   { height: '100%', backgroundColor: '#f59e0b', borderRadius: 2, transition: 'width 0.1s linear' },
   bottomRow:      { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 14px 8px', flexWrap: 'wrap' as const },
   summaryGroup:   { display: 'flex', gap: 5 },
@@ -1507,6 +1659,7 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
   const [doneColorMode,       setDoneColorMode]       = useState<'kit' | 'original' | 'uniform'>('kit');
   const [doneUniformColor,    setDoneUniformColor]    = useState('#22c55e');
   const [hiddenKitCodes,      setHiddenKitCodes]      = useState<Set<string>>(new Set());
+  const [hiddenCategories,    setHiddenCategories]    = useState<Set<string>>(new Set());
   const timelineStylesRef = useRef<Set<string>>(new Set());
 
   // Video export state
@@ -1773,17 +1926,40 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
         }
       }
 
+      // ── Apply category filter ─────────────────────────────────────────────
+      // If some categories are hidden, build the union of allowed-category elements
+      // and intersect it with visibleMap so only matching elements remain visible.
+      let finalMap = visibleMap;
+      if (hiddenCategories.size > 0) {
+        const catIdx = multiIndex.get('__ifc_category__');
+        if (catIdx) {
+          const allowedMaps: OBC.ModelIdMap[] = [];
+          for (const [cat, catMap] of catIdx) {
+            if (!hiddenCategories.has(cat)) allowedMaps.push(catMap);
+          }
+          if (allowedMaps.length > 0) {
+            const allowedMap = unionModelIdMaps(allowedMaps);
+            finalMap = Object.keys(visibleMap).length > 0
+              ? intersectModelIdMaps(visibleMap, allowedMap)
+              : {};
+          } else {
+            // All categories are hidden → show nothing
+            finalMap = {};
+          }
+        }
+      }
+
       try {
         // If no non-hidden kit has started yet, show everything in original state.
         // isolate({}) would hide all fragments leaving only the grey base mesh.
-        if (Object.keys(visibleMap).length === 0) {
+        if (Object.keys(finalMap).length === 0) {
           await hider.set(true);
         } else {
-          await hider.isolate(visibleMap);
+          await hider.isolate(finalMap);
         }
       } catch {}
     })();
-  }, [timelineActive, timelineDateStr, multiIndex, ifcScheduleKits, doneColorMode, doneUniformColor, hiddenKitCodes]);
+  }, [timelineActive, timelineDateStr, multiIndex, ifcScheduleKits, doneColorMode, doneUniformColor, hiddenKitCodes, hiddenCategories]);
 
   // ── Timeline animation loop ───────────────────────────────────────────────
   useEffect(() => {
@@ -2189,14 +2365,16 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
           const [fragmentsModelId] = [...fragments.list.keys()];
           if (!fragmentsModelId) throw new Error('No hay modelo cargado en fragments.list');
 
-          const bufferCopy = new Uint8Array(rawBuffer.slice(0));
+          const bufferCopy  = new Uint8Array(rawBuffer.slice(0));
+          const bufferCopy2 = new Uint8Array(rawBuffer.slice(0));
 
-          const idx = await scanProperties(
-            bufferCopy,
-            fragmentsModelId,
-            IFC_PROPS,
-            'https://unpkg.com/web-ifc@0.0.77/',
-          );
+          const [idx, entityIdx] = await Promise.all([
+            scanProperties(bufferCopy,  fragmentsModelId, IFC_PROPS, 'https://unpkg.com/web-ifc@0.0.77/'),
+            scanEntityTypes(bufferCopy2, fragmentsModelId, 'https://unpkg.com/web-ifc@0.0.77/'),
+          ]);
+
+          // Merge entity type index into the main multiIndex
+          for (const [key, val] of entityIdx) idx.set(key, val);
 
           multiIndexRef.current = idx;
           setMultiIndex(new Map(idx));
@@ -2389,6 +2567,12 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
           onToggleHiddenKit={(code) => setHiddenKitCodes(prev => {
             const next = new Set(prev);
             next.has(code) ? next.delete(code) : next.add(code);
+            return next;
+          })}
+          hiddenCategories={hiddenCategories}
+          onToggleHiddenCategory={(cat) => setHiddenCategories(prev => {
+            const next = new Set(prev);
+            next.has(cat) ? next.delete(cat) : next.add(cat);
             return next;
           })}
         />

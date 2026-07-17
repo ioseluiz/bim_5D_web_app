@@ -74,7 +74,7 @@ async function scanKitCodesFromIFC(ifcBuffer: Uint8Array): Promise<Set<string>> 
   const api = new WEBIFC.IfcAPI();
   api.SetWasmPath(WASM_PATH, true);
   await api.Init();
-  const modelId = api.OpenModel(ifcBuffer, { COORDINATE_TO_ORIGIN: false, USE_FAST_BOOLS: true });
+  const modelId = api.OpenModel(ifcBuffer, { COORDINATE_TO_ORIGIN: false });
   const codes = new Set<string>();
   const TARGET = 'codigo_kit_actividad';
 

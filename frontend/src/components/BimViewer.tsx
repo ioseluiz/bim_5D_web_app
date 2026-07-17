@@ -45,21 +45,6 @@ interface IFCActivity {
   kitCode: string;
 }
 
-interface BudgetItemSummary {
-  id: number;
-  cantidad: string;
-  actividad_detail: {
-    cu_total: string;
-    activity_kit: number | null;
-  };
-}
-
-interface KitBudgetEntry {
-  kit: ActivityKit;
-  total: number;
-  itemCount: number;
-}
-
 interface BimViewerProps {
   ifcUrl: string;
   projectId?: string | number;
@@ -181,7 +166,6 @@ async function scanProperties(
 
   const modelId = api.OpenModel(ifcBuffer, {
     COORDINATE_TO_ORIGIN: false,
-    USE_FAST_BOOLS: true,
   });
 
   try {
@@ -300,7 +284,7 @@ async function scanEntityTypes(
   ifcApi.SetWasmPath(wasmPath, true);
   await ifcApi.Init();
 
-  const modelId = ifcApi.OpenModel(ifcBuffer, { COORDINATE_TO_ORIGIN: false, USE_FAST_BOOLS: true });
+  const modelId = ifcApi.OpenModel(ifcBuffer, { COORDINATE_TO_ORIGIN: false });
 
   try {
     const getLine = (id: number): any => {
@@ -910,112 +894,6 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ properties, loading, 
 
 // ─── Styles ────────────────────────────────────────────────────────────────────
 
-// ─── Budget Panel ──────────────────────────────────────────────────────────────
-
-const fmtCur = (n: number) =>
-  n.toLocaleString('es-PA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-interface BudgetPanelProps {
-  entries: KitBudgetEntry[];
-  activeBudgetKitIds: Set<number> | null;
-  loading: boolean;
-  onClose: () => void;
-}
-
-const BudgetPanel: React.FC<BudgetPanelProps> = ({
-  entries, activeBudgetKitIds, loading, onClose,
-}) => {
-  const isFiltered = activeBudgetKitIds !== null && activeBudgetKitIds.size > 0;
-  const activeEntries = isFiltered
-    ? entries.filter(e => activeBudgetKitIds!.has(e.kit.id))
-    : entries;
-  const filteredTotal = activeEntries.reduce((s, e) => s + e.total, 0);
-  const allTotal      = entries.reduce((s, e) => s + e.total, 0);
-
-  return (
-    <div style={bdgSt.container}>
-      <div style={bdgSt.header}>
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <span style={{ color:'#10b981', fontSize:16, fontWeight:700, lineHeight:1 }}>$</span>
-          <div>
-            <div style={bdgSt.headerTitle}>Costo Básico de Construcción</div>
-            <div style={bdgSt.headerSub}>
-              {isFiltered
-                ? `${activeEntries.length} de ${entries.length} kits seleccionados`
-                : `${entries.length} kit${entries.length !== 1 ? 's' : ''}`}
-            </div>
-          </div>
-        </div>
-        <button style={bdgSt.closeBtn} onClick={onClose} title="Minimizar">—</button>
-      </div>
-
-      <div style={bdgSt.body}>
-        {loading ? (
-          <div style={{ padding:'20px 14px', fontSize:11, color:'#64748b', textAlign:'center' }}>
-            <div style={{ width:18, height:18, borderRadius:'50%', border:'2px solid rgba(148,163,184,0.2)', borderTopColor:'#10b981', animation:'spin 0.8s linear infinite', margin:'0 auto 8px' }} />
-            Cargando presupuesto…
-          </div>
-        ) : entries.length === 0 ? (
-          <div style={{ padding:'20px 14px', fontSize:10, color:'#475569', textAlign:'center', fontStyle:'italic' }}>
-            No hay presupuesto definido para este proyecto
-          </div>
-        ) : (
-          entries.map(({ kit, total, itemCount }) => {
-            const isActive = !isFiltered || activeBudgetKitIds!.has(kit.id);
-            return (
-              <div key={kit.id} style={{ ...bdgSt.kitRow, opacity: isActive ? 1 : 0.2 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:5, flex:1, minWidth:0 }}>
-                  {kit.codigo_kit && (
-                    <span style={{
-                      ...bdgSt.kitCode,
-                      ...(isActive ? {} : { color:'#475569', borderColor:'rgba(71,85,105,0.3)', backgroundColor:'rgba(71,85,105,0.1)' }),
-                    }}>
-                      {kit.codigo_kit}
-                    </span>
-                  )}
-                  <div style={{ minWidth:0 }}>
-                    <div style={{ ...bdgSt.kitName, color: isActive ? '#cbd5e1' : '#475569' }} title={kit.nombre}>
-                      {kit.nombre}
-                    </div>
-                    <div style={{ fontSize:9, color:'#475569' }}>
-                      {itemCount} actividad{itemCount !== 1 ? 'es' : ''}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ ...bdgSt.kitTotal, color: isActive ? '#10b981' : '#334155' }}>
-                  ${fmtCur(total)}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {entries.length > 0 && (
-        <div style={bdgSt.footer}>
-          {isFiltered ? (
-            <>
-              <div style={bdgSt.footerLabel}>Subtotal filtrado</div>
-              <div style={bdgSt.footerTotal}>${fmtCur(filteredTotal)}</div>
-              <div style={{ marginTop:5, paddingTop:5, borderTop:'1px solid rgba(255,255,255,0.06)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <span style={{ fontSize:9, color:'#475569' }}>Total proyecto</span>
-                <span style={{ fontSize:10, color:'#475569', fontFamily:'"IBM Plex Mono",monospace' }}>
-                  ${fmtCur(allTotal)}
-                </span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={bdgSt.footerLabel}>Total general</div>
-              <div style={bdgSt.footerTotal}>${fmtCur(allTotal)}</div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
 const BASE: React.CSSProperties = {
   backgroundColor:'rgba(15,17,23,0.93)', backdropFilter:'blur(12px)',
   borderRadius:'10px', border:'1px solid rgba(255,255,255,0.08)',
@@ -1068,22 +946,6 @@ const propSt: Record<string, React.CSSProperties> = {
   row:          { display:'flex', padding:'5px 14px', gap:8, alignItems:'flex-start' },
   rowLabel:     { fontSize:11, color:'#64748b', minWidth:90, flexShrink:0, paddingTop:1 },
   rowValue:     { fontSize:11, color:'#e2e8f0', wordBreak:'break-all', flex:1, lineHeight:1.5 },
-};
-
-const bdgSt: Record<string, React.CSSProperties> = {
-  container:   { ...BASE, position:'absolute', bottom:'16px', right:'16px', width:270, maxHeight:'calc(48% - 16px)', zIndex:1000 },
-  header:      { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'11px 14px', borderBottom:'1px solid rgba(255,255,255,0.07)', backgroundColor:'rgba(255,255,255,0.03)', flexShrink:0 },
-  headerTitle: { fontSize:11, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'#94a3b8' },
-  headerSub:   { fontSize:10, color:'#64748b', marginTop:2 },
-  closeBtn:    { background:'none', border:'none', color:'#64748b', cursor:'pointer', fontSize:16, padding:'2px 5px', borderRadius:4, lineHeight:1 },
-  body:        { overflowY:'auto', flex:1 },
-  kitRow:      { display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'7px 12px', borderBottom:'1px solid rgba(255,255,255,0.04)', transition:'opacity 0.2s' },
-  kitCode:     { flexShrink:0, fontSize:9, backgroundColor:'rgba(16,185,129,0.12)', color:'#10b981', border:'1px solid rgba(16,185,129,0.2)', borderRadius:3, padding:'1px 5px', fontFamily:'"IBM Plex Mono",monospace', fontWeight:700 },
-  kitName:     { fontSize:10, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' },
-  kitTotal:    { flexShrink:0, fontSize:10, fontFamily:'"IBM Plex Mono",monospace', fontWeight:600 },
-  footer:      { padding:'10px 14px', borderTop:'1px solid rgba(255,255,255,0.08)', backgroundColor:'rgba(16,185,129,0.05)', flexShrink:0 },
-  footerLabel: { fontSize:9, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:3 },
-  footerTotal: { fontSize:15, fontWeight:700, color:'#10b981', fontFamily:'"IBM Plex Mono",monospace' },
 };
 
 // ─── Measure Panel ─────────────────────────────────────────────────────────────
@@ -2232,7 +2094,9 @@ const BimViewer: React.FC<BimViewerProps> = ({ ifcUrl, projectId, onElementSelec
           </bim-color-input>
           <bim-number-input slider step="0.1" label="Intensidad Luz" value="1.5" min="0.1" max="10"
             @change="${({ target }: { target: any }) => {
-              world.scene.config.directionalIntensity = target.value;
+              // La propiedad no está en el tipo de SimpleSceneConfigManager pero
+              // sigue funcionando en runtime con @thatopen/components 3.4.
+              (world.scene.config as any).directionalIntensity = target.value;
             }}">
           </bim-number-input>
           <bim-checkbox label="Rejilla Visible"

@@ -44,6 +44,7 @@ interface ScheduleActShort {
 
 interface ScheduleKitShort {
   id: number;
+  codigo_kit?: string | null;
   fecha_inicio?: string | null;
   fecha_fin?: string | null;
   kit_actividades: ScheduleActShort[];

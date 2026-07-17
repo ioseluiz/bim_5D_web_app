@@ -3,6 +3,12 @@
 import os
 import sys
 
+from dotenv import load_dotenv
+
+# Cargar .env antes del setdefault para que DJANGO_SETTINGS_MODULE
+# del .env tenga precedencia sobre el default 'local'.
+load_dotenv()
+
 
 def main():
     """Run administrative tasks."""

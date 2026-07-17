@@ -1,0 +1,52 @@
+[Unit]
+Description=INIO BIM 4D/5D — Gunicorn (Django) para inio-bim
+Documentation=https://github.com/ioseluiz/bim_5D_web_app
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+# Notify: gunicorn 21+ soporta sd_notify — systemd sabe cuándo está listo
+Type=notify
+
+# Usuario de aplicación (creado en paso 3.2.f) y grupo de Nginx para que el
+# socket sea accesible desde nginx (www-data).
+User=inio
+Group=www-data
+UMask=0027
+
+# Código y venv
+WorkingDirectory=/opt/inio-bim
+EnvironmentFile=/opt/inio-bim/.env
+
+# systemd crea /run/gunicorn owned by User:Group con estos permisos y lo
+# elimina automáticamente al parar el servicio.
+RuntimeDirectory=gunicorn
+RuntimeDirectoryMode=0755
+
+ExecStart=/opt/inio-bim/venv/bin/gunicorn \
+    --workers 3 \
+    --timeout 120 \
+    --bind unix:/run/gunicorn/gunicorn.sock \
+    --access-logfile - \
+    --error-logfile - \
+    --capture-output \
+    config.wsgi:application
+
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# Reinicio automático solo si el proceso falla (no si se detiene manualmente)
+Restart=on-failure
+RestartSec=3
+KillMode=mixed
+TimeoutStopSec=10
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# /opt/inio-bim/media debe ser escribible por gunicorn (uploads)
+ReadWritePaths=/opt/inio-bim/media /opt/inio-bim/staticfiles
+
+[Install]
+WantedBy=multi-user.target

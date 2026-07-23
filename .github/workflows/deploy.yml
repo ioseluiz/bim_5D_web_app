@@ -1,0 +1,110 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  # Permite disparar manualmente desde la UI de Actions
+  workflow_dispatch:
+
+concurrency:
+  # Solo un deploy a la vez. En caso de push rápidos, se cancela el anterior.
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build-frontend:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        # VITE_API_URL=/api porque nginx sirve backend en el mismo dominio.
+        # También lo lee de frontend/.env.production, pero se explicita por
+        # claridad.
+        env:
+          VITE_API_URL: /api
+        run: npm run build
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 3
+
+  deploy:
+    name: Deploy a VM
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Rsync backend a /tmp/deploy-backend
+        run: |
+          rsync -avz --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'venv' \
+            --exclude '__pycache__' \
+            --exclude '*.pyc' \
+            --exclude 'node_modules' \
+            --exclude 'frontend' \
+            --exclude 'frontend-dist' \
+            --exclude 'db.sqlite3' \
+            --exclude 'media' \
+            --exclude 'staticfiles' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            -e "ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=no" \
+            ./ ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/tmp/deploy-backend/
+
+      - name: Rsync frontend a /tmp/deploy-frontend
+        run: |
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=no" \
+            frontend-dist/ ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/tmp/deploy-frontend/
+
+      - name: Correr apply.sh en la VM
+        run: |
+          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=no \
+            ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
+            'sudo /opt/inio-bim/deploy/apply.sh'
+
+      - name: Smoke test HTTP
+        run: |
+          # Da unos segundos para que gunicorn arranque
+          sleep 3
+          # /admin/ devuelve 302 redirect a /admin/login/ cuando OK
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.VM_HOST }}/admin/)
+          echo "HTTP status /admin/: $HTTP"
+          if [ "$HTTP" != "302" ] && [ "$HTTP" != "200" ]; then
+            echo "Deploy fallo: /admin/ devolvio $HTTP"
+            exit 1
+          fi

@@ -1,0 +1,11 @@
+# /etc/sudoers.d/inio-bim-deploy
+#
+# Permite a azureuser correr apply.sh sin password, para que GitHub Actions
+# pueda hacer deploys sin intervención manual.
+#
+# Instalar en la VM con:
+#   sudo cp /opt/inio-bim/deploy/sudoers-inio-bim-deploy /etc/sudoers.d/inio-bim-deploy
+#   sudo chmod 440 /etc/sudoers.d/inio-bim-deploy
+#   sudo visudo -c   # valida sintaxis
+#
+azureuser ALL=(root) NOPASSWD: /opt/inio-bim/deploy/apply.sh

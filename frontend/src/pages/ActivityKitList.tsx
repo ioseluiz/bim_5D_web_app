@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import api from '../api';
+import { useAuth } from '../context/AuthContext';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -47,6 +48,16 @@ interface ActivityKit {
   kit_activities: KitActivity[];
 }
 
+interface ImportSummary {
+  divisions_created: number;
+  divisions_updated: number;
+  kits_created: number;
+  kits_updated: number;
+  activities_created: number;
+  activities_updated: number;
+  errors: { sheet?: string; row?: number | string; message: string }[];
+}
+
 type ActivityFormData = {
   codigo_actividad: string;
   descripcion: string;
@@ -85,6 +96,9 @@ const exportKitCodes = (kits: ActivityKit[]) => {
 };
 
 const ActivityKitList = () => {
+  const { user } = useAuth();
+  const isStaff = !!user?.is_staff;
+
   // Data
   const [kits, setKits] = useState<ActivityKit[]>([]);
   const [masterActivities, setMasterActivities] = useState<MasterActivity[]>([]);
@@ -108,6 +122,16 @@ const ActivityKitList = () => {
   const [importDivision, setImportDivision] = useState('');
   const [selectedMasterIds, setSelectedMasterIds] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
+
+  // Library import (bulk from file)
+  const [showLibraryImport, setShowLibraryImport] = useState(false);
+  const [libraryFiles, setLibraryFiles] = useState<File[]>([]);
+  const [libraryImporting, setLibraryImporting] = useState(false);
+  const [librarySummary, setLibrarySummary] = useState<ImportSummary | null>(null);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
+
+  // Library export
+  const [exportingLibrary, setExportingLibrary] = useState(false);
 
   // Kit list filters
   const [filterText, setFilterText] = useState('');
@@ -336,6 +360,80 @@ const ActivityKitList = () => {
     return Array.from(seen.entries()).map(([code, name]) => ({ code, name })).sort((a, b) => a.code.localeCompare(b.code));
   }, [masterActivities]);
 
+  // ── Library import (biblioteca completa desde archivo) ──────────────────
+
+  const openLibraryImport = () => {
+    setLibraryFiles([]);
+    setLibrarySummary(null);
+    setLibraryError(null);
+    setShowLibraryImport(true);
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await api.get('/activity-kits/template/', { responseType: 'blob' });
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'plantilla_biblioteca_kits.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo descargar la plantilla.');
+    }
+  };
+
+  const handleExportLibrary = async (fmt: 'xlsx' | 'csv' | 'json') => {
+    setExportingLibrary(true);
+    try {
+      const res = await api.get(`/activity-kits/export_library/?fmt=${fmt}`, { responseType: 'blob' });
+      const rawContentType = res.headers['content-type'];
+      const contentType = typeof rawContentType === 'string' ? rawContentType : 'application/octet-stream';
+      const filename = ({
+        xlsx: 'biblioteca_kits.xlsx',
+        csv: 'biblioteca_kits.zip',
+        json: 'biblioteca_kits.json',
+      } as const)[fmt];
+      const blob = new Blob([res.data], { type: contentType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo exportar la biblioteca.');
+    } finally {
+      setExportingLibrary(false);
+    }
+  };
+
+  const handleLibraryImport = async () => {
+    if (libraryFiles.length === 0) return;
+    setLibraryImporting(true);
+    setLibraryError(null);
+    setLibrarySummary(null);
+    try {
+      const form = new FormData();
+      libraryFiles.forEach(f => form.append('files', f));
+      const res = await api.post<ImportSummary>('/activity-kits/import_library/', form);
+      setLibrarySummary(res.data);
+      await fetchAll();
+    } catch (err) {
+      const anyErr = err as { response?: { data?: { error?: string } } };
+      const msg = anyErr.response?.data?.error || 'Error al importar la biblioteca.';
+      setLibraryError(msg);
+      console.error(err);
+    } finally {
+      setLibraryImporting(false);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
 
   if (loading) return <div className="text-center mt-5"><div className="spinner-border text-primary"></div></div>;
@@ -345,20 +443,76 @@ const ActivityKitList = () => {
       <div className="d-flex justify-content-between align-items-start mb-3">
         <div>
           <h2 className="mb-0">Kits de Costos</h2>
-          <p className="text-muted mb-0">Defina los kits de costo y sus actividades para vincular elementos BIM</p>
+          <p className="text-muted mb-0">
+            {isStaff
+              ? 'Defina los kits de costo y sus actividades para vincular elementos BIM'
+              : 'Biblioteca compartida — sólo lectura. Cópielos a un proyecto para editarlos.'
+            }
+          </p>
         </div>
         <div className="d-flex gap-2">
           <button
             className="btn btn-outline-secondary shadow-sm"
             onClick={() => exportKitCodes(kits)}
             disabled={kits.filter(k => k.codigo_kit).length === 0}
-            title="Exportar códigos de kits a CSV"
+            title="Descargar los códigos de kits para pegarlos en el parámetro codigo_kit_actividad en Revit"
           >
-            <i className="bi bi-download me-2"></i>Exportar códigos
+            <i className="bi bi-filetype-csv me-2"></i>Exportar códigos para Revit
           </button>
-          <button className="btn btn-primary shadow-sm" onClick={openNewKit}>
-            <i className="bi bi-box-seam me-2"></i>Nuevo Kit
-          </button>
+          <div className="btn-group shadow-sm">
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onClick={() => handleExportLibrary('xlsx')}
+              disabled={kits.length === 0 || exportingLibrary}
+              title="Exportar toda la biblioteca de kits (Excel)"
+            >
+              {exportingLibrary
+                ? <><span className="spinner-border spinner-border-sm me-2"></span>Exportando…</>
+                : <><i className="bi bi-download me-2"></i>Exportar biblioteca</>
+              }
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+              disabled={kits.length === 0 || exportingLibrary}
+            >
+              <span className="visually-hidden">Elegir formato</span>
+            </button>
+            <ul className="dropdown-menu dropdown-menu-end">
+              <li>
+                <button className="dropdown-item" type="button" onClick={() => handleExportLibrary('xlsx')}>
+                  <i className="bi bi-file-earmark-excel me-2"></i>Excel (.xlsx)
+                </button>
+              </li>
+              <li>
+                <button className="dropdown-item" type="button" onClick={() => handleExportLibrary('csv')}>
+                  <i className="bi bi-file-earmark-zip me-2"></i>CSV (.zip con 3 archivos)
+                </button>
+              </li>
+              <li>
+                <button className="dropdown-item" type="button" onClick={() => handleExportLibrary('json')}>
+                  <i className="bi bi-filetype-json me-2"></i>JSON
+                </button>
+              </li>
+            </ul>
+          </div>
+          {isStaff && (
+            <>
+              <button
+                className="btn btn-outline-primary shadow-sm"
+                onClick={openLibraryImport}
+                title="Importar biblioteca de kits desde archivo (Excel, CSV o JSON)"
+              >
+                <i className="bi bi-upload me-2"></i>Importar biblioteca
+              </button>
+              <button className="btn btn-primary shadow-sm" onClick={openNewKit}>
+                <i className="bi bi-box-seam me-2"></i>Nuevo Kit
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -455,12 +609,24 @@ const ActivityKitList = () => {
                 </div>
               </div>
               <div className="card-footer bg-light border-0 d-flex gap-2 p-3">
-                <button className="btn btn-outline-dark btn-sm flex-grow-1 fw-bold" onClick={() => openEditKit(kit)}>
-                  <i className="bi bi-pencil me-1"></i>Editar Kit
-                </button>
-                <button className="btn btn-outline-danger btn-sm px-3" onClick={() => handleDeleteKit(kit.id)}>
-                  <i className="bi bi-trash"></i>
-                </button>
+                {isStaff ? (
+                  <>
+                    <button className="btn btn-outline-dark btn-sm flex-grow-1 fw-bold" onClick={() => openEditKit(kit)}>
+                      <i className="bi bi-pencil me-1"></i>Editar Kit
+                    </button>
+                    <button className="btn btn-outline-danger btn-sm px-3" onClick={() => handleDeleteKit(kit.id)}>
+                      <i className="bi bi-trash"></i>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="btn btn-outline-dark btn-sm flex-grow-1 fw-bold"
+                    onClick={() => openEditKit(kit)}
+                    title="Ver detalles del kit (sólo lectura)"
+                  >
+                    <i className="bi bi-eye me-1"></i>Ver detalles
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -470,8 +636,12 @@ const ActivityKitList = () => {
               {kits.length === 0 ? (
                 <>
                   <i className="bi bi-box-seam display-1 text-muted opacity-25"></i>
-                  <p className="mt-3 fs-5 text-muted">Aún no hay kits definidos.</p>
-                  <button className="btn btn-primary" onClick={openNewKit}>Crear primer Kit</button>
+                  <p className="mt-3 fs-5 text-muted">
+                    {isStaff ? 'Aún no hay kits definidos.' : 'La biblioteca aún no tiene kits. Contacte al administrador.'}
+                  </p>
+                  {isStaff && (
+                    <button className="btn btn-primary" onClick={openNewKit}>Crear primer Kit</button>
+                  )}
                 </>
               ) : (
                 <>
@@ -494,7 +664,9 @@ const ActivityKitList = () => {
             <div className="modal-content border-0 shadow-lg">
               <div className="modal-header bg-primary text-white py-3">
                 <h5 className="modal-title fw-bold">
-                  {currentKit ? `Editando Kit: ${currentKit.nombre}` : 'Nuevo Kit de Actividades'}
+                  {!isStaff && currentKit
+                    ? `Kit: ${currentKit.nombre} (sólo lectura)`
+                    : currentKit ? `Editando Kit: ${currentKit.nombre}` : 'Nuevo Kit de Actividades'}
                 </h5>
                 <button type="button" className="btn-close btn-close-white" onClick={() => setShowKitModal(false)}></button>
               </div>
@@ -517,6 +689,7 @@ const ActivityKitList = () => {
                           value={kitForm.codigo_kit}
                           onChange={e => setKitForm(p => ({ ...p, codigo_kit: e.target.value.toUpperCase() }))}
                           required
+                          disabled={!isStaff}
                           placeholder="Ej: STRUCT-001"
                           maxLength={50}
                         />
@@ -531,6 +704,7 @@ const ActivityKitList = () => {
                           value={kitForm.nombre}
                           onChange={e => setKitForm(p => ({ ...p, nombre: e.target.value }))}
                           required
+                          disabled={!isStaff}
                           placeholder="Ej: Estructura de Concreto"
                         />
                       </div>
@@ -542,6 +716,7 @@ const ActivityKitList = () => {
                           rows={3}
                           value={kitForm.descripcion}
                           onChange={e => setKitForm(p => ({ ...p, descripcion: e.target.value }))}
+                          disabled={!isStaff}
                           placeholder="Descripción opcional…"
                         />
                       </div>
@@ -554,8 +729,9 @@ const ActivityKitList = () => {
                             className="form-control form-control-color"
                             value={kitForm.color}
                             onChange={e => setKitForm(p => ({ ...p, color: e.target.value }))}
+                            disabled={!isStaff}
                             title="Seleccionar color"
-                            style={{ width: 44, height: 36, padding: 2, cursor: 'pointer' }}
+                            style={{ width: 44, height: 36, padding: 2, cursor: isStaff ? 'pointer' : 'not-allowed' }}
                           />
                           <input
                             type="text"
@@ -565,6 +741,7 @@ const ActivityKitList = () => {
                               const v = e.target.value;
                               if (/^#[0-9a-fA-F]{0,6}$/.test(v)) setKitForm(p => ({ ...p, color: v }));
                             }}
+                            disabled={!isStaff}
                             maxLength={7}
                             placeholder="#3b82f6"
                             style={{ width: 90 }}
@@ -573,12 +750,20 @@ const ActivityKitList = () => {
                         </div>
                       </div>
 
-                      <button type="submit" className="btn btn-primary w-100 fw-bold" disabled={savingKit}>
-                        {savingKit
-                          ? <><span className="spinner-border spinner-border-sm me-2"></span>Guardando…</>
-                          : currentKit ? <><i className="bi bi-check2 me-1"></i>Guardar Cambios</> : <><i className="bi bi-plus-circle me-1"></i>Crear Kit</>
-                        }
-                      </button>
+                      {isStaff && (
+                        <button type="submit" className="btn btn-primary w-100 fw-bold" disabled={savingKit}>
+                          {savingKit
+                            ? <><span className="spinner-border spinner-border-sm me-2"></span>Guardando…</>
+                            : currentKit ? <><i className="bi bi-check2 me-1"></i>Guardar Cambios</> : <><i className="bi bi-plus-circle me-1"></i>Crear Kit</>
+                          }
+                        </button>
+                      )}
+                      {!isStaff && (
+                        <div className="alert alert-warning py-2 small mb-0">
+                          <i className="bi bi-lock me-1"></i>
+                          Modo sólo lectura. Copie este kit a un proyecto para editarlo.
+                        </div>
+                      )}
 
                       {currentKit && (
                         <div className="mt-3 alert alert-info py-2 small mb-0">
@@ -600,14 +785,16 @@ const ActivityKitList = () => {
                       <>
                         <div className="d-flex justify-content-between align-items-center mb-3">
                           <h6 className="text-uppercase text-muted fw-bold small mb-0">Actividades del Kit</h6>
-                          <div className="d-flex gap-2">
-                            <button className="btn btn-outline-secondary btn-sm" onClick={openImport}>
-                              <i className="bi bi-download me-1"></i>Importar del catálogo
-                            </button>
-                            <button className="btn btn-outline-primary btn-sm" onClick={openNewActivity} disabled={activityForm !== null}>
-                              <i className="bi bi-plus-circle me-1"></i>Nueva actividad
-                            </button>
-                          </div>
+                          {isStaff && (
+                            <div className="d-flex gap-2">
+                              <button className="btn btn-outline-secondary btn-sm" onClick={openImport}>
+                                <i className="bi bi-download me-1"></i>Importar del catálogo
+                              </button>
+                              <button className="btn btn-outline-primary btn-sm" onClick={openNewActivity} disabled={activityForm !== null}>
+                                <i className="bi bi-plus-circle me-1"></i>Nueva actividad
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                         {/* Activities table */}
@@ -638,14 +825,16 @@ const ActivityKitList = () => {
                                   <td className="text-center align-middle"><small className="text-muted">{act.unidad}</small></td>
                                   <td className="text-end align-middle"><small className="fw-semibold">${parseFloat(act.cu_total).toFixed(2)}</small></td>
                                   <td className="align-middle">
-                                    <div className="d-flex gap-1 justify-content-end">
-                                      <button className="btn btn-link btn-sm p-0 text-primary" title="Editar" onClick={() => openEditActivity(act)}>
-                                        <i className="bi bi-pencil"></i>
-                                      </button>
-                                      <button className="btn btn-link btn-sm p-0 text-danger" title="Eliminar" onClick={() => handleDeleteActivity(act.id)}>
-                                        <i className="bi bi-trash"></i>
-                                      </button>
-                                    </div>
+                                    {isStaff && (
+                                      <div className="d-flex gap-1 justify-content-end">
+                                        <button className="btn btn-link btn-sm p-0 text-primary" title="Editar" onClick={() => openEditActivity(act)}>
+                                          <i className="bi bi-pencil"></i>
+                                        </button>
+                                        <button className="btn btn-link btn-sm p-0 text-danger" title="Eliminar" onClick={() => handleDeleteActivity(act.id)}>
+                                          <i className="bi bi-trash"></i>
+                                        </button>
+                                      </div>
+                                    )}
                                   </td>
                                 </tr>
                               ))}
@@ -756,6 +945,126 @@ const ActivityKitList = () => {
                     )}
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Library Import Modal (bulk desde archivo) ──────────────────────── */}
+      {showLibraryImport && (
+        <div className="modal show d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.55)', zIndex: 1055 }}>
+          <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div className="modal-content border-0 shadow-lg">
+              <div className="modal-header">
+                <h5 className="modal-title fw-bold">
+                  <i className="bi bi-upload me-2 text-primary"></i>Importar biblioteca de kits
+                </h5>
+                <button type="button" className="btn-close" onClick={() => setShowLibraryImport(false)} disabled={libraryImporting}></button>
+              </div>
+              <div className="modal-body">
+                <div className="alert alert-light border small mb-3">
+                  <div className="fw-semibold mb-1"><i className="bi bi-info-circle me-1 text-primary"></i>Formato esperado</div>
+                  Excel <code>.xlsx</code> con 3 hojas: <strong>Divisiones</strong>, <strong>Kits</strong>, <strong>Actividades</strong>.
+                  También acepta uno o varios <code>.csv</code> (uno por tipo) o un <code>.json</code> anidado.
+                  Descarga la plantilla para ver los encabezados requeridos.
+                  <div className="mt-2">
+                    <button type="button" className="btn btn-sm btn-outline-primary" onClick={handleDownloadTemplate}>
+                      <i className="bi bi-file-earmark-arrow-down me-1"></i>Descargar plantilla Excel
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <label className="form-label fw-semibold small">Archivos a importar</label>
+                  <input
+                    type="file"
+                    className="form-control"
+                    accept=".xlsx,.csv,.json"
+                    multiple
+                    onChange={e => {
+                      setLibraryFiles(Array.from(e.target.files || []));
+                      setLibrarySummary(null);
+                      setLibraryError(null);
+                    }}
+                    disabled={libraryImporting}
+                  />
+                  {libraryFiles.length > 0 && (
+                    <ul className="list-unstyled small text-muted mt-2 mb-0">
+                      {libraryFiles.map((f, i) => (
+                        <li key={i}><i className="bi bi-file-earmark me-1"></i>{f.name} <span className="text-muted">({Math.round(f.size / 1024)} KB)</span></li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {libraryError && (
+                  <div className="alert alert-danger small mb-3">
+                    <i className="bi bi-exclamation-triangle me-1"></i>{libraryError}
+                  </div>
+                )}
+
+                {librarySummary && (
+                  <div className="alert alert-success small mb-0">
+                    <div className="fw-semibold mb-2"><i className="bi bi-check-circle me-1"></i>Importación completada</div>
+                    <div className="row g-2">
+                      <div className="col-4">
+                        <div className="border rounded p-2 bg-white text-center">
+                          <div className="text-muted" style={{ fontSize: 11 }}>Divisiones</div>
+                          <div className="fw-bold text-success">+{librarySummary.divisions_created}</div>
+                          <div className="text-muted" style={{ fontSize: 10 }}>{librarySummary.divisions_updated} actualizadas</div>
+                        </div>
+                      </div>
+                      <div className="col-4">
+                        <div className="border rounded p-2 bg-white text-center">
+                          <div className="text-muted" style={{ fontSize: 11 }}>Kits</div>
+                          <div className="fw-bold text-success">+{librarySummary.kits_created}</div>
+                          <div className="text-muted" style={{ fontSize: 10 }}>{librarySummary.kits_updated} actualizados</div>
+                        </div>
+                      </div>
+                      <div className="col-4">
+                        <div className="border rounded p-2 bg-white text-center">
+                          <div className="text-muted" style={{ fontSize: 11 }}>Actividades</div>
+                          <div className="fw-bold text-success">+{librarySummary.activities_created}</div>
+                          <div className="text-muted" style={{ fontSize: 10 }}>{librarySummary.activities_updated} actualizadas</div>
+                        </div>
+                      </div>
+                    </div>
+                    {librarySummary.errors.length > 0 && (
+                      <div className="mt-3">
+                        <div className="fw-semibold text-danger mb-1">
+                          <i className="bi bi-exclamation-triangle me-1"></i>{librarySummary.errors.length} advertencia(s):
+                        </div>
+                        <ul className="mb-0 ps-3" style={{ maxHeight: 160, overflowY: 'auto' }}>
+                          {librarySummary.errors.map((e, i) => (
+                            <li key={i}>
+                              <span className="text-muted">
+                                {e.sheet ? `[${e.sheet}${e.row != null ? ` fila ${e.row}` : ''}] ` : ''}
+                              </span>
+                              {e.message}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer bg-light border-0">
+                <button type="button" className="btn btn-outline-secondary" onClick={() => setShowLibraryImport(false)} disabled={libraryImporting}>
+                  {librarySummary ? 'Cerrar' : 'Cancelar'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary fw-bold"
+                  onClick={handleLibraryImport}
+                  disabled={libraryFiles.length === 0 || libraryImporting}
+                >
+                  {libraryImporting
+                    ? <><span className="spinner-border spinner-border-sm me-2"></span>Importando…</>
+                    : <><i className="bi bi-upload me-2"></i>Importar</>
+                  }
+                </button>
               </div>
             </div>
           </div>

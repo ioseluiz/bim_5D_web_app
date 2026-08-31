@@ -1,6 +1,9 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from costs.permissions import ActivityObjectPermission, KitObjectPermission
 from .models import KitCronograma, ActividadCronograma
 from .serializers import (
     KitCronogramaSerializer,
@@ -11,6 +14,30 @@ from .serializers import (
 
 class ActividadCronogramaViewSet(viewsets.ModelViewSet):
     serializer_class = ActividadCronogramaSerializer
+    permission_classes = [ActivityObjectPermission]
+
+    def perform_create(self, serializer):
+        proyecto = serializer.validated_data.get('proyecto')
+        kit = serializer.validated_data.get('kit_cronograma')
+        user = self.request.user
+        if proyecto is not None:
+            if not user.is_staff and getattr(proyecto, 'owner_id', None) != user.id:
+                raise PermissionDenied("No puede crear actividades en este proyecto.")
+        elif kit is not None:
+            kit_proyecto = getattr(kit, 'proyecto', None)
+            if kit_proyecto is None:
+                if not user.is_staff:
+                    raise PermissionDenied(
+                        "Sólo un administrador puede modificar la biblioteca."
+                    )
+            elif not user.is_staff and getattr(kit_proyecto, 'owner_id', None) != user.id:
+                raise PermissionDenied("No puede crear actividades en este proyecto.")
+        else:
+            if not user.is_staff:
+                raise PermissionDenied(
+                    "Sólo un administrador puede crear actividades maestras."
+                )
+        serializer.save()
 
     def get_queryset(self):
         if self.action not in ('list',):
@@ -45,6 +72,25 @@ class ActividadCronogramaViewSet(viewsets.ModelViewSet):
 
 class KitCronogramaViewSet(viewsets.ModelViewSet):
     serializer_class = KitCronogramaSerializer
+    permission_classes = [KitObjectPermission]
+
+    def perform_create(self, serializer):
+        proyecto = serializer.validated_data.get('proyecto')
+        user = self.request.user
+        if proyecto is None:
+            if not user.is_staff:
+                raise PermissionDenied(
+                    "Sólo un administrador puede crear kits en la biblioteca."
+                )
+        elif not user.is_staff and getattr(proyecto, 'owner_id', None) != user.id:
+            raise PermissionDenied("No puede crear kits en este proyecto.")
+        serializer.save()
+
+    def _require_staff_for_master(self, kit):
+        if kit.proyecto_id is None and not self.request.user.is_staff:
+            raise PermissionDenied(
+                "Sólo un administrador puede modificar la biblioteca."
+            )
 
     def get_queryset(self):
         if self.action not in ('list',):
@@ -68,6 +114,7 @@ class KitCronogramaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='add_actividad')
     def add_actividad(self, request, pk=None):
         kit = self.get_object()
+        self._require_staff_for_master(kit)
         data = request.data.copy()
 
         base_id = data.pop('base_actividad_id', None)
@@ -97,6 +144,7 @@ class KitCronogramaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='import_actividades')
     def import_actividades(self, request, pk=None):
         kit = self.get_object()
+        self._require_staff_for_master(kit)
         master_ids = request.data.get('actividad_ids', [])
         if not master_ids:
             return Response({'error': 'Se requiere actividad_ids.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -125,17 +173,36 @@ class KitCronogramaViewSet(viewsets.ModelViewSet):
 
         return Response({'created': created}, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['post'], url_path='copy_to_project')
+    @action(
+        detail=True, methods=['post'], url_path='copy_to_project',
+        permission_classes=[IsAuthenticated],
+    )
     def copy_to_project(self, request, pk=None):
-        master_kit = self.get_object()
+        master_kit = KitCronograma.objects.filter(pk=pk, proyecto__isnull=True).first()
+        if master_kit is None:
+            return Response(
+                {'error': 'Kit maestro no encontrado.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         proyecto_id = request.data.get('proyecto')
         if not proyecto_id:
             return Response({'error': 'Se requiere el ID del proyecto.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        from bim.models import Project as _Project
+        proyecto = _Project.objects.filter(pk=proyecto_id).first()
+        if proyecto is None:
+            return Response({'error': 'Proyecto no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        if not request.user.is_staff and proyecto.owner_id != request.user.id:
+            return Response(
+                {'error': 'No puede copiar a un proyecto ajeno.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         new_kit = KitCronograma.objects.create(
-            codigo_kit=master_kit.codigo_kit,
+            codigo_kit=None,  # codigo_kit es unique global; la copia queda sin código.
             nombre=master_kit.nombre,
             descripcion=master_kit.descripcion,
+            color=master_kit.color,
             proyecto_id=proyecto_id,
         )
         for act in master_kit.kit_actividades.select_related('division').all():

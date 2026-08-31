@@ -391,7 +391,8 @@ const ActivityKitList = () => {
     setExportingLibrary(true);
     try {
       const res = await api.get(`/activity-kits/export_library/?fmt=${fmt}`, { responseType: 'blob' });
-      const contentType = res.headers['content-type'] || 'application/octet-stream';
+      const rawContentType = res.headers['content-type'];
+      const contentType = typeof rawContentType === 'string' ? rawContentType : 'application/octet-stream';
       const filename = ({
         xlsx: 'biblioteca_kits.xlsx',
         csv: 'biblioteca_kits.zip',

@@ -95,22 +95,56 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = USE_HTTPS
 SESSION_COOKIE_SECURE = USE_HTTPS
 CSRF_COOKIE_SECURE = USE_HTTPS
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = False  # el frontend lee el CSRF token vía JS
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_REFERRER_POLICY = 'same-origin'
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 X_FRAME_OPTIONS = 'DENY'
 
 if USE_HTTPS:
-    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30  # 30 días — subir a 1 año cuando esté estable
+    # HSTS 1 año, include subdomains. `preload` requiere someterse a la lista
+    # oficial (https://hstspreload.org/) — no activar hasta que el dominio
+    # esté 100% estable en HTTPS por al menos 30 días.
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 365
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = False
 
-# ── Logging básico a stdout (systemd/journalctl los captura) ─────────────────
+# ── Rate limiting (OWASP A07) ────────────────────────────────────────────────
+# django-ratelimit se aplica con decoradores en las views sensibles
+# (accounts.views.login_view). Requiere un cache backend; en la VM se usa el
+# LocMemCache de Django (por gunicorn worker). Suficiente para brute-force
+# a login.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'inio-bim-cache',
+    },
+}
+RATELIMIT_ENABLE = True
+
+# ── Auth token expiration (OWASP A07) ────────────────────────────────────────
+# DRF Token no expira por default; forzamos rotación cada 30 días con un
+# management command (ver deploy/README-cicd.md).
+# Alternativa futura: migrar a djangorestframework-simplejwt.
+
+# ── Logging (OWASP A09: Security Logging) ───────────────────────────────────
+# systemd/journalctl captura stdout de gunicorn. Formato incluye tiempo, nivel,
+# nombre del logger y mensaje.
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{asctime} {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
         },
     },
     'root': {
@@ -119,6 +153,19 @@ LOGGING = {
     },
     'loggers': {
         'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # Eventos de seguridad de Django (SuspiciousOperation, DisallowedHost,
+        # SessionInvalidHost, etc.) — WARNING mínimo para no perderlos.
+        'django.security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        # Nuestros propios eventos de auth (login OK/failed, ratelimit).
+        'accounts.security': {
             'handlers': ['console'],
             'level': 'INFO',
             'propagate': False,

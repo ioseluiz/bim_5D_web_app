@@ -1,20 +1,34 @@
 name: Deploy
 
 on:
+  # workflow_dispatch permite disparar el deploy manualmente desde la UI de
+  # Actions. Es el modo por defecto (más seguro).
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Escribe "deploy" para confirmar'
+        required: true
+        default: ''
+
+  # Push a main dispara el flujo, pero el job `deploy` está en environment
+  # `production` con required reviewers, así que espera aprobación humana
+  # antes de tocar la VM.
   push:
     branches: [main]
-  # Permite disparar manualmente desde la UI de Actions
-  workflow_dispatch:
 
 concurrency:
-  # Solo un deploy a la vez. En caso de push rápidos, se cancela el anterior.
   group: deploy-production
   cancel-in-progress: false
 
 jobs:
+  # ── Job 1: Build (no toca la VM, no requiere approval) ─────────────────────
   build-frontend:
     name: Build frontend
     runs-on: ubuntu-latest
+    # Gate para el trigger manual: exigir que confirm sea "deploy".
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.confirm == 'deploy'
     steps:
       - uses: actions/checkout@v4
 
@@ -31,9 +45,6 @@ jobs:
 
       - name: Build
         working-directory: frontend
-        # VITE_API_URL=/api porque nginx sirve backend en el mismo dominio.
-        # También lo lee de frontend/.env.production, pero se explicita por
-        # claridad.
         env:
           VITE_API_URL: /api
         run: npm run build
@@ -45,10 +56,17 @@ jobs:
           path: frontend/dist
           retention-days: 3
 
+  # ── Job 2: Deploy (environment protegido con required reviewers) ──────────
   deploy:
     name: Deploy a VM
     needs: build-frontend
     runs-on: ubuntu-latest
+    # El environment "production" debe estar creado en:
+    #   GitHub → Settings → Environments → New environment → production
+    # con "Required reviewers" apuntando a los aprobadores.
+    environment:
+      name: production
+      url: https://${{ secrets.VM_DOMAIN }}/
     steps:
       - uses: actions/checkout@v4
 
@@ -59,14 +77,24 @@ jobs:
           path: frontend-dist
 
       - name: Configure SSH
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
         run: |
+          if [[ -z "$VM_HOST" || -z "$VM_SSH_KEY" ]]; then
+            echo "❌ Secrets VM_HOST y/o VM_SSH_KEY no configurados"
+            exit 1
+          fi
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_deploy
+          echo "$VM_SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Rsync backend a /tmp/deploy-backend
+      - name: Rsync backend
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
         run: |
           rsync -avz --delete \
             --exclude '.git' \
@@ -83,28 +111,70 @@ jobs:
             --exclude '.env' \
             --exclude '.env.*' \
             -e "ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=no" \
-            ./ ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/tmp/deploy-backend/
+            ./ "$VM_USER@$VM_HOST:/tmp/deploy-backend/"
 
-      - name: Rsync frontend a /tmp/deploy-frontend
+      - name: Rsync frontend
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
         run: |
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=no" \
-            frontend-dist/ ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/tmp/deploy-frontend/
+            frontend-dist/ "$VM_USER@$VM_HOST:/tmp/deploy-frontend/"
 
-      - name: Correr apply.sh en la VM
+      - name: Apply on VM
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
         run: |
           ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=no \
-            ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
+            "$VM_USER@$VM_HOST" \
             'sudo /opt/inio-bim/deploy/apply.sh'
 
-      - name: Smoke test HTTP
+      - name: Smoke test HTTPS
+        env:
+          VM_DOMAIN: ${{ secrets.VM_DOMAIN }}
+          VM_HOST: ${{ secrets.VM_HOST }}
         run: |
-          # Da unos segundos para que gunicorn arranque
-          sleep 3
-          # /admin/ devuelve 302 redirect a /admin/login/ cuando OK
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.VM_HOST }}/admin/)
-          echo "HTTP status /admin/: $HTTP"
-          if [ "$HTTP" != "302" ] && [ "$HTTP" != "200" ]; then
-            echo "Deploy fallo: /admin/ devolvio $HTTP"
+          # Da unos segundos a gunicorn.
+          sleep 5
+
+          # Preferir DOMAIN (con cert) sobre HOST (sin cert).
+          TARGET="${VM_DOMAIN:-$VM_HOST}"
+          SCHEME="https"
+          if [[ -z "$VM_DOMAIN" ]]; then
+            echo "⚠ VM_DOMAIN no configurado; smoke test cae a HTTP"
+            SCHEME="http"
+          fi
+
+          BASE="$SCHEME://$TARGET"
+          echo "▶ Smoke test contra $BASE"
+
+          # 1. /admin/ debe devolver 302 (redirect a login) o 200.
+          HTTP=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/admin/" --max-time 10)
+          echo "  /admin/ → $HTTP"
+          if [[ "$HTTP" != "302" && "$HTTP" != "200" ]]; then
+            echo "❌ Deploy falló: /admin/ devolvió $HTTP"
             exit 1
           fi
+
+          # 2. /api/auth/me/ debe devolver 401 sin token (endpoint vivo pero
+          # protegido). Si diera 500 → algo está roto.
+          HTTP=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/api/auth/me/" --max-time 10)
+          echo "  /api/auth/me/ → $HTTP"
+          if [[ "$HTTP" != "401" && "$HTTP" != "403" ]]; then
+            echo "❌ Deploy falló: /api/auth/me/ devolvió $HTTP (esperado 401/403)"
+            exit 1
+          fi
+
+          # 3. HSTS header (solo si estamos por HTTPS).
+          if [[ "$SCHEME" == "https" ]]; then
+            HSTS=$(curl -sS -I "$BASE/admin/" --max-time 10 | grep -i '^strict-transport-security:' || true)
+            if [[ -z "$HSTS" ]]; then
+              echo "⚠ Warning: no se recibió Strict-Transport-Security header"
+            else
+              echo "  HSTS: OK"
+            fi
+          fi
+
+          echo "✅ Smoke test OK"

@@ -139,10 +139,12 @@ Debe emitir el error de "Falta /tmp/deploy-backend" (correcto — no debe pedir 
 
 ---
 
-## Fase 3 — Configurar Environment `production` en GitHub (local, en el navegador)
+## Fase 3 — Configurar Environment `production_inio` en GitHub (local, en el navegador)
 
 1. Ve a **github.com/ioseluiz/bim_5D_web_app → Settings → Environments → New environment**.
-2. Nombre: `production` → Configure environment.
+2. Nombre: `production_inio` → Configure environment.
+   (usamos `production_inio` en vez de `production` porque este último puede
+   estar reservado por otro workflow o feature del repo.)
 3. Marca **Required reviewers** y agrégate a ti mismo (y a otros admins si aplica).
 4. **Save protection rules**.
 
@@ -150,7 +152,7 @@ Cada vez que push a `main` dispare deploy, GitHub esperará tu aprobación antes
 
 ### 3.1 Añadir secrets del environment
 
-Todavía en Environment → production → **Environment secrets → Add secret**. Crea:
+Todavía en Environment → production_inio → **Environment secrets → Add secret**. Crea:
 
 | Name | Value |
 |---|---|
@@ -241,7 +243,7 @@ Debe devolver `strict-transport-security: max-age=31536000; includeSubDomains`.
 
 ### 4.6 Añadir `VM_DOMAIN` como Environment variable
 
-Vuelve a **Settings → Environments → production → Environment variables** (no secrets) → **Add variable**:
+Vuelve a **Settings → Environments → production_inio → Environment variables** (no secrets) → **Add variable**:
 
 | `VM_DOMAIN` | `20-1-2-3.sslip.io` (el que emitiste) |
 
@@ -294,7 +296,7 @@ Portal → VM → Backup → configura una política diaria con retención 30 d�
 | A01 | Broken Access Control | `costs/permissions.py` (staff-only en biblioteca), `bim.Project.owner` scoping |
 | A02 | Cryptographic Failures | HTTPS TLS 1.2+, HSTS 1 año, secure cookies |
 | A03 | Injection | DRF serializers + ORM (nunca SQL raw); CSP restringe eval |
-| A04 | Insecure Design | Environment `production` con approval, PR reviews obligatorios |
+| A04 | Insecure Design | Environment `production_inio` con approval, PR reviews obligatorios |
 | A05 | Security Misconfiguration | `manage.py check --deploy` en CI, DEBUG=False forzado, headers via nginx + Django |
 | A06 | Vulnerable Components | `.github/workflows/security-scan.yml` (pip-audit + npm audit, semanal) |
 | A07 | Auth Failures | `django-ratelimit` en login, logging de intentos, token rotation via management command |

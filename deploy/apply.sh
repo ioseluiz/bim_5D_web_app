@@ -35,6 +35,16 @@ if [[ ! -d "$FRONTEND_SRC" ]]; then
   exit 1
 fi
 
+# ── 0. Backup pre-deploy (BD + media) ─────────────────────────────────────────
+# Aborta el deploy si el backup falla; es cheap insurance.
+BACKUP_SCRIPT="$BACKEND_SRC/deploy/pre-deploy-backup.sh"
+if [[ -x "$BACKUP_SCRIPT" ]]; then
+  log "Corriendo backup pre-deploy"
+  bash "$BACKUP_SCRIPT"
+else
+  warn "$BACKUP_SCRIPT no existe o no es ejecutable; skip backup"
+fi
+
 # ── 1. Sincronizar backend ────────────────────────────────────────────────────
 log "Sincronizando código backend a $BACKEND_DST"
 rsync -a --delete \

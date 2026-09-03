@@ -31,17 +31,12 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
-    'crispy_forms',
-    'crispy_bootstrap5',
     'import_export',
     'accounts',
     'costs',
     'bim',
     'schedule',
 ]
-
-CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
-CRISPY_TEMPLATE_PACK = "bootstrap5"
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -59,7 +54,7 @@ ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates'],
+        'DIRS': [],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -92,7 +87,6 @@ from import_export.formats.base_formats import CSV, XLSX, JSON
 IMPORT_EXPORT_FORMATS = [CSV, XLSX, JSON]
 
 STATIC_URL = 'static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_URL = 'media/'

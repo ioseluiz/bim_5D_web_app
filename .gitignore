@@ -24,6 +24,7 @@ media/
 dist/
 build/
 frontend/dist/
+staticfiles/
 
 # ── Node.js ────────────────────────────────────────────────────────────────────
 node_modules/

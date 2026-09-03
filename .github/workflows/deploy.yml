@@ -61,11 +61,12 @@ jobs:
     name: Deploy a VM
     needs: build-frontend
     runs-on: ubuntu-latest
-    # El environment "production" debe estar creado en:
-    #   GitHub → Settings → Environments → New environment → production
+    # El environment "production_inio" debe estar creado en:
+    #   GitHub → Settings → Environments → New environment → production_inio
     # con "Required reviewers" apuntando a los aprobadores.
+    # (nombre elegido por conflicto con "production" ya reservado)
     environment:
-      name: production
+      name: production_inio
       # environment.url solo acepta contextos github/inputs/vars/needs.
       # VM_DOMAIN se guarda como Environment VARIABLE (no secret) — es
       # publico por definicion y necesitamos referenciarlo aqui.

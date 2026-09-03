@@ -157,7 +157,14 @@ Todavía en Environment → production → **Environment secrets → Add secret*
 | `VM_HOST` | IP pública de la VM (ej. `20.1.2.3`) |
 | `VM_USER` | `azureuser` |
 | `VM_SSH_KEY` | Contenido completo de `~/.ssh/inio-bim-ci` (la **privada**), incluidas las líneas BEGIN/END |
+
+Además, en la misma pantalla del environment, sección **Environment variables** (no secrets) → **Add variable**:
+
+| Name | Value |
+|---|---|
 | `VM_DOMAIN` | Se llena en la Fase 4 (deja vacío por ahora) |
+
+> `VM_DOMAIN` es una **variable**, no un secret, porque `environment.url` en workflows solo acepta los contextos `github`, `inputs`, `vars`, `needs` — no `secrets`. Un dominio público no necesita cifrado de todos modos.
 
 Para `VM_SSH_KEY`, en PowerShell:
 
@@ -232,13 +239,13 @@ curl.exe -sI https://<tu-dominio-sslip>/admin/ | Select-String "strict-transport
 
 Debe devolver `strict-transport-security: max-age=31536000; includeSubDomains`.
 
-### 4.6 Añadir `VM_DOMAIN` al environment de GitHub
+### 4.6 Añadir `VM_DOMAIN` como Environment variable
 
-Ahora vuelve a **Settings → Environments → production → Environment secrets** y edita/añade:
+Vuelve a **Settings → Environments → production → Environment variables** (no secrets) → **Add variable**:
 
 | `VM_DOMAIN` | `20-1-2-3.sslip.io` (el que emitiste) |
 
-Con esto el `smoke test HTTPS` del workflow apuntará al dominio en vez de a la IP.
+Con esto `environment.url` y el smoke test HTTPS apuntan al dominio en vez de a la IP.
 
 ---
 

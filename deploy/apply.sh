@@ -63,6 +63,55 @@ log "Sincronizando frontend a $FRONTEND_DST"
 rsync -a --delete "$FRONTEND_SRC/" "$FRONTEND_DST/"
 chown -R www-data:www-data "$FRONTEND_DST"
 
+# ── 2b. Configuración de nginx (plantilla + hardening) ────────────────────────
+# Sin este paso la config de nginx del repo nunca llegaba a /etc/nginx/ y había
+# que aplicar cada cambio por SSH a mano.
+log "Instalando configuración de nginx"
+
+NGINX_SITE="/etc/nginx/sites-available/inio-bim"
+NGINX_BAK="/tmp/nginx-inio-bim.bak.$$"
+NGINX_SNIPPETS="/etc/nginx/snippets"
+
+# El dominio es el primer valor de ALLOWED_HOSTS en el .env — única fuente de
+# verdad, así no hay que mantenerlo en dos sitios.
+DOMAIN=$(grep -E '^ALLOWED_HOSTS=' "$BACKEND_DST/.env" 2>/dev/null | cut -d= -f2- | cut -d, -f1 | tr -d '[:space:]')
+
+if [[ -z "$DOMAIN" ]]; then
+  err "No pude leer el dominio de ALLOWED_HOSTS en $BACKEND_DST/.env"
+  exit 1
+fi
+log "  dominio: $DOMAIN"
+
+# Backup de la config viva para poder revertir si nginx -t falla.
+if [[ -f "$NGINX_SITE" ]]; then
+  cp -a "$NGINX_SITE" "$NGINX_BAK"
+fi
+
+mkdir -p "$NGINX_SNIPPETS"
+install -m 644 "$BACKEND_DST/deploy/nginx-security-headers.conf" "$NGINX_SNIPPETS/inio-bim-security-headers.conf"
+install -m 644 "$BACKEND_DST/deploy/nginx-hardening.conf" /etc/nginx/conf.d/inio-bim-hardening.conf
+
+DOMAIN="$DOMAIN" envsubst '${DOMAIN}' < "$BACKEND_DST/deploy/nginx-inio-bim.conf" > "$NGINX_SITE"
+ln -sf "$NGINX_SITE" /etc/nginx/sites-enabled/inio-bim
+rm -f /etc/nginx/sites-enabled/default
+
+# Validar ANTES de recargar. Si la config nueva no parsea, restaurar la
+# anterior y abortar sin tocar el nginx que está sirviendo.
+if ! nginx -t 2>/tmp/nginx-test.err; then
+  err "nginx -t falló con la configuración nueva:"
+  cat /tmp/nginx-test.err >&2
+  if [[ -f "$NGINX_BAK" ]]; then
+    warn "Restaurando configuración anterior"
+    cp -a "$NGINX_BAK" "$NGINX_SITE"
+    nginx -t && log "Config anterior restaurada; nginx sigue sirviendo la versión previa"
+  fi
+  exit 1
+fi
+
+systemctl reload nginx
+log "  nginx recargado"
+rm -f "$NGINX_BAK"
+
 # ── 3. Dependencias Python ────────────────────────────────────────────────────
 log "Instalando dependencias Python (si hay cambios)"
 sudo -u "$APP_USER" "$BACKEND_DST/venv/bin/pip" install \

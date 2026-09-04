@@ -307,6 +307,88 @@ Portal → VM → Backup → configura una política diaria con retención 30 d�
 
 ---
 
+## Cómo se aplica la configuración de nginx
+
+Desde el commit que añadió el paso `2b` a `deploy/apply.sh`, **la config de
+nginx viaja con el deploy** — ya no hace falta entrar por SSH a aplicarla.
+
+En cada deploy, `apply.sh`:
+
+1. Lee el dominio del primer valor de `ALLOWED_HOSTS` en `/opt/inio-bim/.env`
+   (única fuente de verdad).
+2. Copia `deploy/nginx-security-headers.conf` →
+   `/etc/nginx/snippets/inio-bim-security-headers.conf`.
+3. Copia `deploy/nginx-hardening.conf` →
+   `/etc/nginx/conf.d/inio-bim-hardening.conf`.
+4. Renderiza `deploy/nginx-inio-bim.conf` con `envsubst` →
+   `/etc/nginx/sites-available/inio-bim`.
+5. Corre `nginx -t`. **Si falla, restaura la config anterior y aborta el deploy**
+   sin haber recargado nginx — el servidor sigue sirviendo la versión buena.
+6. `systemctl reload nginx`.
+
+### Estructura de los server blocks
+
+| Block | Escucha | `server_name` | Qué hace |
+|---|---|---|---|
+| A | `:80` (default) | `_` | ACME challenge + `301` al dominio canónico |
+| B | `:443` (default) | `_` | `ssl_reject_handshake on` — corta el TLS sin SNI |
+| C | `:443` | `${DOMAIN}` | La aplicación (SPA + API + admin + static/media) |
+
+**Por qué el redirect usa el dominio fijo y no `$host`:** con `$host`, entrar
+por `http://<IP>/` redirigía a `https://<IP>/`, que presenta el cert del
+dominio → `ERR_CERT_COMMON_NAME_INVALID` y el usuario nunca llegaba al sitio.
+Con el dominio hardcodeado, cualquier entrada por HTTP (IP, dominio ajeno, o
+sin header `Host` en HTTP/1.0) aterriza en el sitio correcto.
+
+**Por qué `ssl_reject_handshake` y no `return 444`:** `return 444` opera en la
+capa HTTP, o sea que el handshake TLS ya se completó y el navegador ya mostró
+el interstitial de certificado. `ssl_reject_handshake` aborta antes, con un
+alert TLS `unrecognized_name`: error de conexión limpio, sin botón "Proceder".
+
+> ⚠ Efecto secundario aceptado: rechaza **todo** cliente TLS sin SNI, incluido
+> `curl https://<IP>/`. No usar si algún día pones un Load Balancer o
+> Application Gateway con health probes contra la IP.
+
+### Reglas al editar `nginx-inio-bim.conf`
+
+- **Nunca** metas `location ~ /\.` (deny de ocultos) en el block `:80` — las
+  locations regex ganan a las prefix y `/.well-known/` empieza con punto:
+  bloquearías el renewal del certificado.
+- **Todo `location` que declare su propio `add_header`** debe re-incluir
+  `snippets/inio-bim-security-headers.conf`. nginx hereda `add_header` solo si
+  el nivel actual no define ninguno; declarar uno descarta todos los del padre.
+- **El CSP va en una sola línea.** nginx no interpreta `\` como continuación
+  dentro de strings; mandaría backslashes y newlines literales y HTTP/2
+  rechazaría el response.
+- **No añadas `error_page 404 /index.html`.** Se heredaría a `/static/` y
+  devolvería HTML cuando falte un `.js` hasheado — con `nosniff` el navegador
+  lo rechaza con un error de MIME críptico. El `try_files` de `location /` ya
+  sirve el SPA con 200 para las rutas de aplicación.
+
+### Verificación tras un deploy
+
+```bash
+# HTTP por IP → redirige al DOMINIO (no a la IP)
+curl -sI http://<IP>/ | grep -i location
+
+# HTTP con Host ajeno → también al dominio
+curl -sI -H 'Host: evil.com' http://<IP>/ | grep -i location
+
+# HTTPS por IP (sin SNI) → handshake rechazado
+openssl s_client -connect <IP>:443 </dev/null 2>&1 | grep -E 'unrecognized|handshake failure'
+
+# HTTPS por dominio → 302 al login del admin
+curl -sI https://<DOMINIO>/admin/ | head -3
+
+# Versión de nginx oculta → "server: nginx" sin versión
+curl -sI https://<DOMINIO>/ | grep -i '^server:'
+
+# Security headers presentes también en /static/
+curl -sI https://<DOMINIO>/static/admin/css/base.css | grep -iE 'strict-transport|content-security|nosniff'
+```
+
+---
+
 ## Cheatsheet OWASP Top 10 → dónde está resuelto
 
 | # | Riesgo | Mitigación en el repo |

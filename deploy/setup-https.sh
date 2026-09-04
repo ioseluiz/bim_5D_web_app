@@ -90,10 +90,26 @@ EOF
     -d "$DOMAIN" \
     --email "$EMAIL" \
     --agree-tos --no-eff-email \
+    --deploy-hook "systemctl reload nginx" \
     --non-interactive
 else
   log "Cert existente detectado para $DOMAIN; se conserva"
 fi
+
+# -- Renewal hook global ----------------------------------------------------
+# El --deploy-hook de arriba solo se graba en el renewal.conf al momento de
+# emitir. Este hook cubre TODOS los certs, incluidos los emitidos antes de que
+# existiera esa linea. Sin el, certbot.timer renueva pero nginx sigue sirviendo
+# el cert viejo hasta un reload manual -- y expira en produccion.
+log "Instalando renewal hook (reload de nginx tras cada renovacion)"
+mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'HOOKEOF'
+#!/usr/bin/env bash
+# Instalado por deploy/setup-https.sh -- recarga nginx tras renovar un cert.
+set -e
+systemctl reload nginx
+HOOKEOF
+chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 
 # ── 6. Renderizar el template final con SSL activo ─────────────────────────
 log "Aplicando configuración nginx final (con SSL)"

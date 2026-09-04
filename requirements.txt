@@ -1,11 +1,11 @@
 asgiref==3.11.1
 colorama==0.4.6
 diff-match-patch==20241021
-Django==6.0.5
+Django==6.0.8
 django-cors-headers==4.9.0
 django-import-export==4.4.1
 django-ratelimit==4.1.0
-djangorestframework==3.17.1
+djangorestframework==3.17.2
 import-export==0.3.1
 iniconfig==2.3.0
 packaging==26.2
@@ -14,8 +14,8 @@ Pygments==2.20.0
 pytest==9.0.3
 pytest-django==4.12.0
 python-dotenv==1.2.2
-sqlparse==0.5.5
-tablib==3.9.0
+sqlparse==0.6.0
+tablib==3.10.0
 openpyxl==3.1.5
 tzdata==2026.2
 

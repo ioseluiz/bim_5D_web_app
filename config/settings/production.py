@@ -124,6 +124,20 @@ CACHES = {
 }
 RATELIMIT_ENABLE = True
 
+# ⚠ CRÍTICO — sin esto el login devuelve 500 en producción.
+#
+# gunicorn escucha en un socket Unix (deploy/inio-bim.service: --bind
+# unix:/run/gunicorn/gunicorn.sock), que no tiene IP de origen, así que
+# REMOTE_ADDR llega VACÍO. django-ratelimit aborta con ImproperlyConfigured
+# ("IP address in REMOTE_ADDR is empty") al calcular la key 'ip', y la
+# excepción salta en el decorador — antes de que la vista mire credenciales.
+#
+# nginx pone la IP real del cliente en X-Real-IP (proxy_set_header explícito
+# en deploy/nginx-inio-bim.conf). Se usa ese header y no X-Forwarded-For
+# porque nginx lo fija con $remote_addr, que el cliente no puede falsear;
+# X-Forwarded-For es una lista a la que sí puede anteponer valores.
+RATELIMIT_IP_META_KEY = 'HTTP_X_REAL_IP'
+
 # ── Auth token expiration (OWASP A07) ────────────────────────────────────────
 # DRF Token no expira por default; forzamos rotación cada 30 días con un
 # management command (ver deploy/README-cicd.md).

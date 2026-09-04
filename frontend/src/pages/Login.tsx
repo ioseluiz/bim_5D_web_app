@@ -11,6 +11,41 @@ const Login = () => {
   const [error,    setError]    = useState('');
   const [loading,  setLoading]  = useState(false);
 
+  // Traduce el fallo a un mensaje que diga qué pasó de verdad.
+  //
+  // Antes esto era `err?.response?.data?.error ?? 'Error al iniciar sesión.'`,
+  // así que un 500 del servidor, un corte de red o un CORS bloqueado se veían
+  // exactamente igual que una contraseña mal escrita. Cuando el login empezó a
+  // devolver 500 en producción, los usuarios reportaron "mi contraseña es
+  // correcta y no puedo entrar" — y el mensaje no ayudaba a distinguirlo.
+  const describeError = (err: unknown): string => {
+    const response = (err as { response?: { status?: number; data?: unknown } })?.response;
+
+    // Sin respuesta: no se llegó al servidor (red caída, DNS, CORS, timeout).
+    if (!response) {
+      return 'No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.';
+    }
+
+    const status = response.status ?? 0;
+    const backendMessage =
+      typeof (response.data as { error?: unknown })?.error === 'string'
+        ? (response.data as { error: string }).error
+        : null;
+
+    // 5xx: el problema es del servidor, no de las credenciales.
+    if (status >= 500) {
+      return 'El servidor no está disponible en este momento. Intenta de nuevo en unos minutos.';
+    }
+
+    // 429, 401, 400: el backend manda un mensaje útil en `error`.
+    if (backendMessage) return backendMessage;
+
+    if (status === 429) return 'Demasiados intentos. Intenta de nuevo en un minuto.';
+    if (status === 401) return 'Credenciales incorrectas.';
+
+    return 'Error al iniciar sesión.';
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
@@ -18,8 +53,8 @@ const Login = () => {
     try {
       await login(email, password);
       navigate('/projects', { replace: true });
-    } catch (err: any) {
-      setError(err?.response?.data?.error ?? 'Error al iniciar sesión.');
+    } catch (err: unknown) {
+      setError(describeError(err));
     } finally {
       setLoading(false);
     }

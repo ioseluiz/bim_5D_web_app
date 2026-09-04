@@ -1,8 +1,8 @@
+import hashlib
 import logging
 
 from django.contrib.auth import authenticate, get_user_model
-from django_ratelimit.decorators import ratelimit
-from django_ratelimit.exceptions import Ratelimited
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
@@ -17,6 +17,62 @@ from rest_framework.response import Response
 
 security_log = logging.getLogger('accounts.security')
 
+# OWASP A07 — límites de fuerza bruta sobre el login.
+LOGIN_RATE_PER_IP = 10      # intentos por minuto y dirección IP
+LOGIN_RATE_PER_EMAIL = 5    # intentos por minuto y cuenta
+LOGIN_RATE_WINDOW = 60      # segundos
+
+
+def _client_ip(request):
+    """IP real del cliente.
+
+    gunicorn escucha en un socket Unix, así que REMOTE_ADDR llega vacío;
+    nginx pone la IP en X-Real-IP (ver deploy/nginx-inio-bim.conf). Se
+    prefiere ese header porque nginx lo fija con $remote_addr y el cliente
+    no puede falsearlo, a diferencia de X-Forwarded-For.
+    """
+    return (
+        request.META.get('HTTP_X_REAL_IP')
+        or request.META.get('REMOTE_ADDR')
+        or ''
+    )
+
+
+def _rate_limited(request, email):
+    """True si esta petición supera algún límite.
+
+    Nunca propaga excepciones: si la caché falla o algo sale mal calculando
+    los contadores, se registra y se DEJA PASAR la petición. Un guardarraíl
+    roto no puede dejar a los usuarios fuera de la aplicación — que es
+    exactamente lo que ocurrió cuando django-ratelimit abortaba con
+    ImproperlyConfigured por el REMOTE_ADDR vacío del socket Unix.
+    """
+    try:
+        buckets = []
+        ip = _client_ip(request)
+        if ip:
+            buckets.append((f'login:ip:{ip}', LOGIN_RATE_PER_IP))
+        if email:
+            # Hash para no meter direcciones de correo en las claves de caché.
+            digest = hashlib.sha256(email.lower().encode('utf-8')).hexdigest()[:32]
+            buckets.append((f'login:email:{digest}', LOGIN_RATE_PER_EMAIL))
+
+        for key, limit in buckets:
+            # add() solo escribe si la clave no existe: arranca la ventana.
+            cache.add(key, 0, LOGIN_RATE_WINDOW)
+            try:
+                count = cache.incr(key)
+            except ValueError:
+                # La clave expiró entre el add y el incr.
+                cache.set(key, 1, LOGIN_RATE_WINDOW)
+                count = 1
+            if count > limit:
+                return True
+        return False
+    except Exception:
+        security_log.exception('rate limit check fallo; se permite la peticion')
+        return False
+
 
 @api_view(['POST'])
 # Sin authentication_classes: si el usuario tiene una cookie de sesión activa
@@ -25,24 +81,22 @@ security_log = logging.getLogger('accounts.security')
 # identificar al usuario actual — solo valida credenciales.
 @authentication_classes([])
 @permission_classes([AllowAny])
-# OWASP A07: rate limit brute-force. 10 intentos/min por IP, y 5/min por email
-# (aunque el email no exista, para no dar oráculo por timing/rate).
-@ratelimit(key='ip', rate='10/m', method='POST', block=False)
-@ratelimit(key='post:email', rate='5/m', method='POST', block=False)
 def login_view(request):
-    if getattr(request, 'limited', False):
+    # El límite se calcula dentro de la vista, no con el decorador de
+    # django-ratelimit: su key 'post:email' lee request.POST, que DRF deja
+    # vacío cuando el body es JSON (lo que manda el SPA), colapsando el
+    # bucket de todos los usuarios en una sola clave vacía.
+    email = request.data.get('email', '').strip()
+    password = request.data.get('password', '')
+
+    if _rate_limited(request, email):
         security_log.warning(
-            'login ratelimited ip=%s email=%s',
-            request.META.get('REMOTE_ADDR'),
-            request.data.get('email', ''),
+            'login ratelimited ip=%s email=%s', _client_ip(request), email,
         )
         return Response(
             {'error': 'Demasiados intentos. Intenta de nuevo en un minuto.'},
             status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
-
-    email = request.data.get('email', '').strip()
-    password = request.data.get('password', '')
 
     if not email or not password:
         return Response(
@@ -59,7 +113,7 @@ def login_view(request):
     except UserModel.DoesNotExist:
         security_log.info(
             'login failed unknown_email=%s ip=%s',
-            email, request.META.get('REMOTE_ADDR'),
+            email, _client_ip(request),
         )
         return Response(
             {'error': 'Credenciales incorrectas.'},
@@ -70,7 +124,7 @@ def login_view(request):
     if user is None:
         security_log.info(
             'login failed bad_password email=%s ip=%s',
-            stored_email, request.META.get('REMOTE_ADDR'),
+            stored_email, _client_ip(request),
         )
         return Response(
             {'error': 'Credenciales incorrectas.'},
@@ -79,7 +133,7 @@ def login_view(request):
 
     security_log.info(
         'login ok email=%s ip=%s',
-        stored_email, request.META.get('REMOTE_ADDR'),
+        stored_email, _client_ip(request),
     )
     token, _ = Token.objects.get_or_create(user=user)
     return Response({

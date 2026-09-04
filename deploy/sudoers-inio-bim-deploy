@@ -1,11 +1,29 @@
-# /etc/sudoers.d/inio-bim-deploy
+# /etc/sudoers.d/zz-inio-bim-deploy
 #
 # Permite a azureuser correr apply.sh sin password, para que GitHub Actions
 # pueda hacer deploys sin intervención manual.
 #
+# ⚠ IMPORTANTE — el nombre del archivo destino DEBE empezar con "zz-".
+#
+# sudo lee /etc/sudoers.d/ en orden alfabético y aplica la ÚLTIMA regla que
+# matchea. Azure crea /etc/sudoers.d/waagent con:
+#
+#     azureuser ALL = (ALL) ALL      ← sin NOPASSWD, exige password
+#
+# (waagent lo reescribe cada vez que reseteas el password de la VM desde el
+# portal). Si nuestro archivo se llamara "inio-bim-deploy", cargaría ANTES de
+# "waagent" y esa regla anularía el NOPASSWD, haciendo que GitHub Actions
+# falle con "sudo: a password is required".
+#
+# Con el prefijo "zz-" cargamos al final y nuestra regla gana.
+#
 # Instalar en la VM con:
-#   sudo cp /opt/inio-bim/deploy/sudoers-inio-bim-deploy /etc/sudoers.d/inio-bim-deploy
-#   sudo chmod 440 /etc/sudoers.d/inio-bim-deploy
+#   sudo cp /opt/inio-bim/deploy/sudoers-inio-bim-deploy /etc/sudoers.d/zz-inio-bim-deploy
+#   sudo chmod 440 /etc/sudoers.d/zz-inio-bim-deploy
 #   sudo visudo -c   # valida sintaxis
+#
+# Verificar que quedó al final:
+#   sudo -l -U azureuser
+#   # la línea "(root) NOPASSWD: /opt/inio-bim/deploy/apply.sh" debe ser la ÚLTIMA
 #
 azureuser ALL=(root) NOPASSWD: /opt/inio-bim/deploy/apply.sh

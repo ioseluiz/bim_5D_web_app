@@ -122,12 +122,29 @@ sudo systemctl restart inio-bim.service
 
 ### 2.3 Sudoers para GitHub Actions (VM)
 
+> ⚠ El nombre destino **debe** empezar con `zz-`. Azure crea
+> `/etc/sudoers.d/waagent` con `azureuser ALL = (ALL) ALL` (sin NOPASSWD)
+> cada vez que reseteas el password de la VM desde el portal. Como sudo lee
+> `/etc/sudoers.d/` en orden alfabético y aplica la **última** regla que
+> matchea, un archivo llamado `inio-bim-deploy` cargaría antes de `waagent`
+> y su NOPASSWD quedaría anulado → GitHub Actions falla con
+> `sudo: a password is required`.
+
 ```bash
-sudo cp /opt/inio-bim/deploy/sudoers-inio-bim-deploy /etc/sudoers.d/inio-bim-deploy
-sudo chmod 440 /etc/sudoers.d/inio-bim-deploy
-sudo visudo -c   # debe imprimir "parsed OK"
+sudo cp /opt/inio-bim/deploy/sudoers-inio-bim-deploy /etc/sudoers.d/zz-inio-bim-deploy
+sudo chmod 440 /etc/sudoers.d/zz-inio-bim-deploy
+sudo visudo -c   # debe imprimir "parsed OK" para cada archivo
 sudo chmod +x /opt/inio-bim/deploy/apply.sh /opt/inio-bim/deploy/setup-https.sh /opt/inio-bim/deploy/pre-deploy-backup.sh
 ```
+
+Verifica que nuestra regla quedó **al final** de la lista:
+
+```bash
+sudo -l -U azureuser
+```
+
+La línea `(root) NOPASSWD: /opt/inio-bim/deploy/apply.sh` debe ser la **última**.
+Si aparece antes de un `(ALL) ALL`, revisa que el archivo se llame `zz-inio-bim-deploy`.
 
 Test:
 
@@ -135,7 +152,8 @@ Test:
 sudo -n /opt/inio-bim/deploy/apply.sh 2>&1 | head -3
 ```
 
-Debe emitir el error de "Falta /tmp/deploy-backend" (correcto — no debe pedir password).
+Debe emitir output del script (probablemente el error "Falta /tmp/deploy-backend"
+si no hay artefactos pendientes) — **sin pedir password**.
 
 ---
 
@@ -315,6 +333,25 @@ Portal → VM → Backup → configura una política diaria con retención 30 d�
 **Certbot dice "unable to resolve host"**
 - Confirma que `nslookup <tu-dominio-sslip>` devuelve tu IP.
 - El puerto 80 debe estar abierto en el NSG durante la emisión (challenge http-01).
+
+**`sudo: a password is required` en el step "Apply on VM"**
+
+Dos causas posibles, en orden de probabilidad:
+
+1. **Orden de carga del sudoers.** Corre `sudo -l -U azureuser` en la VM. Si la
+   línea `(root) NOPASSWD: /opt/inio-bim/deploy/apply.sh` **no** es la última,
+   otra regla la está anulando (típicamente `/etc/sudoers.d/waagent`, que Azure
+   reescribe al resetear el password). Fix:
+   ```bash
+   sudo mv /etc/sudoers.d/inio-bim-deploy /etc/sudoers.d/zz-inio-bim-deploy
+   sudo chmod 440 /etc/sudoers.d/zz-inio-bim-deploy
+   sudo visudo -c
+   ```
+2. **`apply.sh` sin bit ejecutable.** `ls -l /opt/inio-bim/deploy/apply.sh` debe
+   dar `-rwxr-xr-x`. Si da `-rw-r--r--`, sudo no lo reconoce como comando válido
+   y cae al prompt de password. Los `.sh` están marcados `100755` en git desde
+   el commit `199ce5e`; si aparece sin `x`, la VM tiene código anterior a ese
+   commit — vuelve a desplegar.
 
 **El smoke test dice 502 Bad Gateway**
 - Gunicorn no arrancó. `sudo journalctl -u inio-bim -n 50 --no-pager` te dice por qué.

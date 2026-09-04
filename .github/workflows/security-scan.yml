@@ -32,7 +32,9 @@ jobs:
       - name: Audit requirements.txt
         # --strict marca fail solo si hay vulns con fix disponible.
         # Reporta también las sin-fix como warnings.
-        run: pip-audit -r requirements.txt --strict --disable-pip
+        # Sin --disable-pip porque requirements.txt no tiene hashes;
+        # pip-audit descarga transitivas y las incluye en el scan.
+        run: pip-audit -r requirements.txt --strict
         continue-on-error: false
 
   node:

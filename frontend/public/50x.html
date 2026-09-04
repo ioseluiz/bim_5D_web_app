@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Servicio no disponible — INIO BIM</title>
+<!-- Autocontenida a propósito: CSS inline, sin <script src>, sin assets
+     hasheados. Se sirve justo cuando el backend está caído o a medio
+     desplegar, momento en que esos archivos pueden no existir. -->
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f6f8; color: #1f2933; padding: 24px;
+  }
+  .card {
+    background: #fff; border-radius: 10px; padding: 40px 44px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.06);
+    max-width: 460px; width: 100%; text-align: center;
+    border-top: 4px solid #154b75;
+  }
+  h1 { margin: 0 0 8px; font-size: 1.35rem; font-weight: 700; color: #154b75; }
+  p { margin: 0 0 6px; font-size: .95rem; line-height: 1.55; color: #52606d; }
+  .hint { margin-top: 22px; font-size: .82rem; color: #7b8794; }
+  button {
+    margin-top: 24px; padding: 9px 22px; font-size: .92rem; font-weight: 600;
+    color: #fff; background: #154b75; border: 0; border-radius: 6px; cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { background: #10395a; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16191d; color: #e4e7eb; }
+    .card { background: #1f2429; box-shadow: none; }
+    h1 { color: #6ba3d0; }
+    p { color: #9aa5b1; }
+    .hint { color: #616e7c; }
+    button { background: #2b6ca3; }
+    button:hover { background: #357cb8; }
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Servicio temporalmente no disponible</h1>
+    <p>La aplicación está reiniciándose o en mantenimiento.</p>
+    <p>Normalmente vuelve en menos de un minuto.</p>
+    <button onclick="location.reload()">Reintentar</button>
+    <p class="hint">INIO BIM 4D y 5D · Autoridad del Canal de Panamá</p>
+  </div>
+</body>
+</html>
